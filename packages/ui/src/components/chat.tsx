@@ -11,6 +11,7 @@ import { UserIcon, Copy01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-fre
 import { toast } from "@multica/ui/components/ui/sonner";
 import { useHubStore, useDeviceId, useMessagesStore, useGatewayStore } from "@multica/store";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
+import { useAutoScroll } from "@multica/ui/hooks/use-auto-scroll";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { cn } from "@multica/ui/lib/utils";
 
@@ -54,6 +55,7 @@ export function Chat() {
 
   const mainRef = useRef<HTMLElement>(null)
   const fadeStyle = useScrollFade(mainRef)
+  useAutoScroll(mainRef)
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden w-full">
