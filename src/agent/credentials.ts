@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import JSON5 from "json5";
@@ -90,6 +90,8 @@ export class CredentialManager {
   private coreConfig: CredentialsConfig | null = null;
   private skillsConfig: SkillsEnvConfig | null = null;
   private resolvedSkillsEnv: Record<string, string> | null = null;
+  private coreMtimeMs: number | null = null;
+  private skillsMtimeMs: number | null = null;
 
   private isDisabled(): boolean {
     if (process.env.SMC_CREDENTIALS_DISABLE === "1") return true;
@@ -99,17 +101,32 @@ export class CredentialManager {
   private loadCore(): void {
     const path = getCredentialsPath();
     const disabled = this.isDisabled();
+    let mtimeMs: number | null = null;
 
-    if (this.corePath === path && this.disabledState === disabled && this.coreConfig) {
+    if (!disabled && existsSync(path)) {
+      try {
+        mtimeMs = statSync(path).mtimeMs;
+      } catch {
+        mtimeMs = null;
+      }
+    }
+
+    if (
+      this.corePath === path
+      && this.disabledState === disabled
+      && this.coreConfig
+      && this.coreMtimeMs === mtimeMs
+    ) {
       return;
     }
 
     this.corePath = path;
     this.disabledState = disabled;
     this.coreConfig = null;
+    this.coreMtimeMs = mtimeMs;
 
     if (disabled) return;
-    if (!existsSync(path)) return;
+    if (mtimeMs === null) return;
 
     const raw = readFileSync(path, "utf8");
     try {
@@ -123,8 +140,22 @@ export class CredentialManager {
   private loadSkillsEnv(): void {
     const path = getSkillsEnvPath();
     const disabled = this.isDisabled();
+    let mtimeMs: number | null = null;
 
-    if (this.skillsPath === path && this.disabledState === disabled && this.resolvedSkillsEnv) {
+    if (!disabled && existsSync(path)) {
+      try {
+        mtimeMs = statSync(path).mtimeMs;
+      } catch {
+        mtimeMs = null;
+      }
+    }
+
+    if (
+      this.skillsPath === path
+      && this.disabledState === disabled
+      && this.resolvedSkillsEnv
+      && this.skillsMtimeMs === mtimeMs
+    ) {
       return;
     }
 
@@ -132,9 +163,10 @@ export class CredentialManager {
     this.disabledState = disabled;
     this.skillsConfig = null;
     this.resolvedSkillsEnv = null;
+    this.skillsMtimeMs = mtimeMs;
 
     if (disabled) return;
-    if (!existsSync(path)) return;
+    if (mtimeMs === null) return;
 
     const raw = readFileSync(path, "utf8");
     try {
@@ -228,6 +260,8 @@ export class CredentialManager {
     this.coreConfig = null;
     this.skillsConfig = null;
     this.resolvedSkillsEnv = null;
+    this.coreMtimeMs = null;
+    this.skillsMtimeMs = null;
   }
 
   /**

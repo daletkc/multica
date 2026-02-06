@@ -264,7 +264,7 @@ export function getLoginInstructions(providerId: string): string {
 
   if (info.authMethod === "oauth") {
     if (info.loginCommand) {
-      return `Run: ${info.loginCommand}\nThen restart Super Multica to use the credentials.`;
+      return `Run: ${info.loginCommand}\nThen retry in Super Multica to use the credentials.`;
     }
   }
 
