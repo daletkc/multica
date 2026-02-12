@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createHashRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { ThemeProvider } from './components/theme-provider'
 import { TooltipProvider } from '@multica/ui/components/ui/tooltip'
+import { Toaster } from './components/toaster'
 import Layout from './pages/layout'
 import HomePage from './pages/home'
 import ChatPage from './pages/chat'
@@ -13,6 +14,9 @@ import OnboardingPage from './pages/onboarding'
 import { useOnboardingStore } from './stores/onboarding'
 import { useProviderStore } from './stores/provider'
 import { useChannelsStore } from './stores/channels'
+import { useSkillsStore } from './stores/skills'
+import { useToolsStore } from './stores/tools'
+import { useCronJobsStore } from './stores/cron-jobs'
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const completed = useOnboardingStore((s) => s.completed)
@@ -51,12 +55,16 @@ export default function App() {
     // Prefetch global data at app startup
     useProviderStore.getState().fetch()
     useChannelsStore.getState().fetch()
+    useSkillsStore.getState().fetch()
+    useToolsStore.getState().fetch()
+    useCronJobsStore.getState().fetch()
   }, [])
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="multica-theme">
       <TooltipProvider>
         <RouterProvider router={router} />
+        <Toaster position="bottom-right" />
       </TooltipProvider>
     </ThemeProvider>
   )
