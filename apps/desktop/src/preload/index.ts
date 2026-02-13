@@ -141,7 +141,7 @@ const electronAPI = {
   // Auth management
   auth: {
     /** Load auth data from local file */
-    load: (): Promise<{ sid: string; user: { uid: string; name: string; email?: string; icon?: string; vip?: number } } | null> =>
+    load: (): Promise<{ sid: string; user: { uid: string; name: string; email?: string; icon?: string; vip?: number }; deviceId?: string } | null> =>
       ipcRenderer.invoke('auth:load'),
     /** Save auth data to local file */
     save: (sid: string, user: { uid: string; name: string; email?: string; icon?: string; vip?: number }): Promise<boolean> =>
@@ -150,6 +150,10 @@ const electronAPI = {
     clear: (): Promise<boolean> => ipcRenderer.invoke('auth:clear'),
     /** Start login flow (opens browser) */
     startLogin: (): Promise<void> => ipcRenderer.invoke('auth:startLogin'),
+    /** Get Device ID (raw UUID) */
+    getDeviceId: (): Promise<string> => ipcRenderer.invoke('auth:getDeviceId'),
+    /** Get encrypted Device-Id header value for API requests */
+    getDeviceIdHeader: (): Promise<string> => ipcRenderer.invoke('auth:getDeviceIdHeader'),
     /** Listen for auth callback */
     onAuthCallback: (callback: (data: { sid: string; user: { uid: string; name: string; email?: string; icon?: string; vip?: number } }) => void) => {
       ipcRenderer.on('auth:callback', (_event, data) => callback(data))

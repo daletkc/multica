@@ -9,12 +9,12 @@
  */
 
 import http from "node:http";
+import crypto from "node:crypto";
 import { ipcMain, shell, BrowserWindow } from "electron";
 import {
   existsSync,
   readFileSync,
   writeFileSync,
-  unlinkSync,
   mkdirSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
@@ -30,27 +30,144 @@ export type { AuthUser };
 export interface AuthData {
   sid: string;
   user: AuthUser;
+  deviceId?: string;
+}
+
+// Internal type for the full file structure (deviceId is always present)
+interface AuthFileData {
+  sid?: string;
+  user?: AuthUser;
+  deviceId: string;
+}
+
+// ============================================================================
+// Device ID - 设备唯一标识
+// ============================================================================
+
+const AUTH_FILE_PATH = join(DATA_DIR, "auth.json");
+
+/**
+ * Generate a UUID v4 for device identification.
+ */
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * SHA-256 hash function.
+ */
+function sha256(text: string): string {
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+/**
+ * Generate encrypted Device-Id header value.
+ * Algorithm (consistent with Web):
+ * 1. SHA-256 hash of deviceId, take first 32 chars
+ * 2. SHA-256 hash of step 1 result, take first 8 chars
+ * 3. Return: step2[0:8] + step1[0:32] = 40 chars
+ */
+export function generateDeviceIdHeader(deviceId: string): string {
+  if (!deviceId || typeof deviceId !== "string") {
+    throw new Error("[Auth] Invalid deviceId for header generation");
+  }
+
+  const hash1 = sha256(deviceId);
+  const hashedDeviceId = hash1.slice(0, 32);
+
+  const hash2 = sha256(hashedDeviceId);
+  return hash2.slice(0, 8) + hashedDeviceId;
+}
+
+/**
+ * Read raw auth file data, handling all edge cases.
+ * Returns null if file doesn't exist or is invalid.
+ */
+function readAuthFile(): Partial<AuthFileData> | null {
+  try {
+    if (!existsSync(AUTH_FILE_PATH)) {
+      return null;
+    }
+
+    const raw = readFileSync(AUTH_FILE_PATH, "utf8").trim();
+    if (!raw) {
+      return null;
+    }
+
+    const data = JSON.parse(raw);
+    if (typeof data !== "object" || data === null) {
+      console.warn("[Auth] Invalid auth file format, ignoring");
+      return null;
+    }
+
+    return data as Partial<AuthFileData>;
+  } catch (error) {
+    // JSON parse error or file read error
+    console.error("[Auth] Failed to read auth file:", error);
+    return null;
+  }
+}
+
+/**
+ * Write auth file data to disk.
+ */
+function writeAuthFile(data: Partial<AuthFileData>): boolean {
+  try {
+    mkdirSync(dirname(AUTH_FILE_PATH), { recursive: true });
+    writeFileSync(AUTH_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch (error) {
+    console.error("[Auth] Failed to write auth file:", error);
+    return false;
+  }
+}
+
+/**
+ * Get or create a persistent Device ID.
+ * Device ID persists across logins/logouts - it represents the device, not the user.
+ */
+export function getOrCreateDeviceId(): string {
+  const existing = readAuthFile();
+
+  // If we have a valid deviceId, return it
+  if (existing?.deviceId && typeof existing.deviceId === "string") {
+    return existing.deviceId;
+  }
+
+  // Generate new deviceId and persist it
+  const newDeviceId = generateUUID();
+  console.log("[Auth] Generated new Device ID:", newDeviceId.slice(0, 8) + "...");
+
+  // Preserve any existing auth data while adding deviceId
+  const dataToSave: Partial<AuthFileData> = existing
+    ? { ...existing, deviceId: newDeviceId }
+    : { deviceId: newDeviceId };
+
+  if (!writeAuthFile(dataToSave)) {
+    // Write failed, but we can still return the generated ID for this session
+    console.error("[Auth] Failed to persist new Device ID");
+  }
+
+  return newDeviceId;
 }
 
 // ============================================================================
 // Storage - 认证数据持久化
 // ============================================================================
 
-const AUTH_FILE_PATH = join(DATA_DIR, "auth.json");
-
 function loadAuthData(): AuthData | null {
   try {
-    if (!existsSync(AUTH_FILE_PATH)) {
-      return null;
-    }
-    const raw = readFileSync(AUTH_FILE_PATH, "utf8");
-    const data = JSON.parse(raw) as AuthData;
+    const data = readAuthFile();
 
-    if (!data.sid || !data.user?.uid) {
+    if (!data?.sid || !data?.user?.uid) {
       return null;
     }
 
-    return data;
+    return {
+      sid: data.sid,
+      user: data.user,
+      deviceId: data.deviceId,
+    };
   } catch (error) {
     console.error("[Auth] Failed to load auth data:", error);
     return null;
@@ -59,10 +176,14 @@ function loadAuthData(): AuthData | null {
 
 function saveAuthData(sid: string, user: AuthUser): boolean {
   try {
-    mkdirSync(dirname(AUTH_FILE_PATH), { recursive: true });
+    // Ensure we have a deviceId (get existing or create new)
+    const deviceId = getOrCreateDeviceId();
 
-    const data: AuthData = { sid, user };
-    writeFileSync(AUTH_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
+    const data: AuthFileData = { sid, user, deviceId };
+
+    if (!writeAuthFile(data)) {
+      return false;
+    }
 
     console.log("[Auth] Auth data saved successfully");
     return true;
@@ -72,12 +193,25 @@ function saveAuthData(sid: string, user: AuthUser): boolean {
   }
 }
 
+/**
+ * Clear auth data (logout) while preserving Device ID.
+ * Device ID persists across logins - it represents the device, not the user.
+ */
 function clearAuthData(): boolean {
   try {
-    if (existsSync(AUTH_FILE_PATH)) {
-      unlinkSync(AUTH_FILE_PATH);
-      console.log("[Auth] Auth data cleared");
+    // Read existing data to preserve deviceId
+    const existing = readAuthFile();
+    const deviceId = existing?.deviceId || getOrCreateDeviceId();
+
+    // Write back only the deviceId
+    const preserved: Partial<AuthFileData> = { deviceId };
+
+    if (!writeAuthFile(preserved)) {
+      console.error("[Auth] Failed to preserve Device ID during logout");
+      return false;
     }
+
+    console.log("[Auth] Auth data cleared (Device ID preserved)");
     return true;
   } catch (error) {
     console.error("[Auth] Failed to clear auth data:", error);
@@ -167,8 +301,8 @@ async function createLocalServerSession(): Promise<number> {
       try {
         const url = new URL(req.url || "/", "http://localhost");
 
-        // 处理回调请求
-        if (url.pathname === "/callback" || url.pathname === "/") {
+        // 处理回调请求（只接受 /callback 路径）
+        if (url.pathname === "/callback") {
           const sid = url.searchParams.get("sid");
           const userJson = url.searchParams.get("user");
 
@@ -351,5 +485,16 @@ export function registerAuthHandlers(): void {
   // 开始登录
   ipcMain.handle("auth:startLogin", () => {
     return startLogin();
+  });
+
+  // 获取 Device ID（原始值）
+  ipcMain.handle("auth:getDeviceId", () => {
+    return getOrCreateDeviceId();
+  });
+
+  // 获取加密后的 Device-Id header 值
+  ipcMain.handle("auth:getDeviceIdHeader", () => {
+    const deviceId = getOrCreateDeviceId();
+    return generateDeviceIdHeader(deviceId);
   });
 }
