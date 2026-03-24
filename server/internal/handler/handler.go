@@ -20,16 +20,29 @@ type txStarter interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
+type dbExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 type Handler struct {
 	Queries     *db.Queries
+	DB          dbExecutor
 	TxStarter   txStarter
 	Hub         *realtime.Hub
 	TaskService *service.TaskService
 }
 
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub) *Handler {
+	var executor dbExecutor
+	if candidate, ok := txStarter.(dbExecutor); ok {
+		executor = candidate
+	}
+
 	return &Handler{
 		Queries:     queries,
+		DB:          executor,
 		TxStarter:   txStarter,
 		Hub:         hub,
 		TaskService: service.NewTaskService(queries, hub),

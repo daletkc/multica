@@ -76,6 +76,7 @@ const mockAgents: Agent[] = [
   {
     id: "agent-1",
     workspace_id: "ws-1",
+    runtime_id: "runtime-1",
     name: "Claude",
     description: "",
     avatar_url: null,

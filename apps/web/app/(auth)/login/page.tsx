@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "../../../lib/auth-context";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const { login, isLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      await login(email, name || undefined);
+      await login(email, name || undefined, searchParams.get("next") || undefined);
     } catch (err) {
       setError("Login failed. Make sure the server is running.");
       setSubmitting(false);
@@ -61,5 +63,13 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

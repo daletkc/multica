@@ -11,6 +11,9 @@ import type {
   CreateAgentRequest,
   UpdateAgentRequest,
   AgentTask,
+  AgentRuntime,
+  DaemonPairingSession,
+  ApproveDaemonPairingSessionRequest,
   InboxItem,
   Comment,
   Workspace,
@@ -187,8 +190,29 @@ export class ApiClient {
     await this.fetch(`/api/agents/${id}`, { method: "DELETE" });
   }
 
+  async listRuntimes(params?: { workspace_id?: string }): Promise<AgentRuntime[]> {
+    const search = new URLSearchParams();
+    const wsId = params?.workspace_id ?? this.workspaceId;
+    if (wsId) search.set("workspace_id", wsId);
+    return this.fetch(`/api/runtimes?${search}`);
+  }
+
   async listAgentTasks(agentId: string): Promise<AgentTask[]> {
     return this.fetch(`/api/agents/${agentId}/tasks`);
+  }
+
+  async getDaemonPairingSession(token: string): Promise<DaemonPairingSession> {
+    return this.fetch(`/api/daemon/pairing-sessions/${token}`);
+  }
+
+  async approveDaemonPairingSession(
+    token: string,
+    data: ApproveDaemonPairingSessionRequest,
+  ): Promise<DaemonPairingSession> {
+    return this.fetch(`/api/daemon/pairing-sessions/${token}/approve`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   // Inbox

@@ -8,11 +8,20 @@ export type AgentTriggerType = "on_assign" | "scheduled";
 
 export interface RuntimeDevice {
   id: string;
+  workspace_id: string;
+  daemon_id: string | null;
   name: string;
   runtime_mode: AgentRuntimeMode;
+  provider: string;
   status: "online" | "offline";
   device_info: string;
+  metadata: Record<string, unknown>;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
+
+export type AgentRuntime = RuntimeDevice;
 
 export interface AgentTool {
   id: string;
@@ -33,6 +42,7 @@ export interface AgentTrigger {
 export interface AgentTask {
   id: string;
   agent_id: string;
+  runtime_id: string;
   issue_id: string;
   status: "queued" | "dispatched" | "running" | "completed" | "failed" | "cancelled";
   priority: number;
@@ -47,6 +57,7 @@ export interface AgentTask {
 export interface Agent {
   id: string;
   workspace_id: string;
+  runtime_id: string;
   name: string;
   description: string;
   avatar_url: string | null;
@@ -67,7 +78,7 @@ export interface CreateAgentRequest {
   name: string;
   description?: string;
   avatar_url?: string;
-  runtime_mode?: AgentRuntimeMode;
+  runtime_id: string;
   runtime_config?: Record<string, unknown>;
   visibility?: AgentVisibility;
   max_concurrent_tasks?: number;
@@ -80,6 +91,7 @@ export interface UpdateAgentRequest {
   name?: string;
   description?: string;
   avatar_url?: string;
+  runtime_id?: string;
   runtime_config?: Record<string, unknown>;
   visibility?: AgentVisibility;
   status?: AgentStatus;

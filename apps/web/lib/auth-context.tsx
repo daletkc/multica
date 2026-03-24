@@ -19,7 +19,7 @@ interface AuthContextValue {
   members: MemberWithUser[];
   agents: Agent[];
   isLoading: boolean;
-  login: (email: string, name?: string) => Promise<void>;
+  login: (email: string, name?: string, redirectTo?: string) => Promise<void>;
   logout: () => void;
   switchWorkspace: (workspaceId: string) => Promise<void>;
   createWorkspace: (data: { name: string; slug: string; description?: string }) => Promise<Workspace>;
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, [hydrateWorkspace]);
 
-  const login = useCallback(async (email: string, name?: string) => {
+  const login = useCallback(async (email: string, name?: string, redirectTo?: string) => {
     const { token, user: u } = await api.login(email, name);
     api.setToken(token);
     localStorage.setItem("multica_token", token);
@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const wsList = await api.listWorkspaces();
     await hydrateWorkspace(wsList);
 
-    router.push("/issues");
+    router.push(redirectTo || "/issues");
   }, [hydrateWorkspace, router]);
 
   const logout = useCallback(() => {

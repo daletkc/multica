@@ -260,7 +260,7 @@ export default function SettingsPage() {
               Name
             </label>
             <input
-              type="text"
+              type="search"
               value={profileName}
               onChange={(e) => setProfileName(e.target.value)}
               className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -291,7 +291,7 @@ export default function SettingsPage() {
               className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Save className="h-3 w-3" />
-              {profileSaving ? "Saving..." : "Save"}
+              {profileSaving ? "Updating..." : "Update Profile"}
             </button>
           </div>
         </div>

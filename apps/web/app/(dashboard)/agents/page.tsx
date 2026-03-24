@@ -72,50 +72,8 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Mock Runtime Devices (will be replaced with real daemon registration API)
-// ---------------------------------------------------------------------------
-
-const MOCK_RUNTIME_DEVICES: RuntimeDevice[] = [
-  {
-    id: "runtime-cloud",
-    name: "Multica Agent",
-    runtime_mode: "cloud",
-    status: "online",
-    device_info: "Cloud",
-  },
-  {
-    id: "runtime-macbook",
-    name: "Jiayuan's MacBook Pro",
-    runtime_mode: "local",
-    status: "online",
-    device_info: "macOS 15.4 · Claude Code v1.2",
-  },
-  {
-    id: "runtime-linux",
-    name: "Dev Server (gpu-01)",
-    runtime_mode: "local",
-    status: "online",
-    device_info: "Ubuntu 24.04 · Codex v0.8",
-  },
-  {
-    id: "runtime-ci",
-    name: "CI Runner",
-    runtime_mode: "local",
-    status: "offline",
-    device_info: "Linux · GitHub Actions",
-  },
-];
-
-function getRuntimeDevice(agent: Agent): RuntimeDevice | undefined {
-  const runtimeId = agent.runtime_config?.runtime_id as string | undefined;
-  if (runtimeId) {
-    return MOCK_RUNTIME_DEVICES.find((d) => d.id === runtimeId);
-  }
-  if (agent.runtime_mode === "cloud") {
-    return MOCK_RUNTIME_DEVICES.find((d) => d.runtime_mode === "cloud");
-  }
-  return undefined;
+function getRuntimeDevice(agent: Agent, runtimes: RuntimeDevice[]): RuntimeDevice | undefined {
+  return runtimes.find((runtime) => runtime.id === agent.runtime_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,32 +81,36 @@ function getRuntimeDevice(agent: Agent): RuntimeDevice | undefined {
 // ---------------------------------------------------------------------------
 
 function CreateAgentDialog({
+  runtimes,
   onClose,
   onCreate,
 }: {
+  runtimes: RuntimeDevice[];
   onClose: () => void;
   onCreate: (data: CreateAgentRequest) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [selectedRuntimeId, setSelectedRuntimeId] = useState(MOCK_RUNTIME_DEVICES[0]!.id);
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState(runtimes[0]?.id ?? "");
   const [creating, setCreating] = useState(false);
   const [runtimeOpen, setRuntimeOpen] = useState(false);
 
-  const selectedRuntime = MOCK_RUNTIME_DEVICES.find((d) => d.id === selectedRuntimeId)!;
+  useEffect(() => {
+    if (!selectedRuntimeId && runtimes[0]) {
+      setSelectedRuntimeId(runtimes[0].id);
+    }
+  }, [runtimes, selectedRuntimeId]);
+
+  const selectedRuntime = runtimes.find((d) => d.id === selectedRuntimeId) ?? null;
 
   const handleSubmit = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !selectedRuntime) return;
     setCreating(true);
     try {
       await onCreate({
         name: name.trim(),
         description: description.trim(),
-        runtime_mode: selectedRuntime.runtime_mode,
-        runtime_config: {
-          runtime_id: selectedRuntime.id,
-          runtime_name: selectedRuntime.name,
-        },
+        runtime_id: selectedRuntime.id,
         triggers: [{ id: generateId(), type: "on_assign", enabled: true, config: {} }],
       });
       onClose();
@@ -205,23 +167,28 @@ function CreateAgentDialog({
               <button
                 type="button"
                 onClick={() => setRuntimeOpen(!runtimeOpen)}
+                disabled={runtimes.length === 0}
                 className="flex w-full items-center gap-3 rounded-md border bg-background px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
               >
-                {selectedRuntime.runtime_mode === "cloud" ? (
+                {selectedRuntime?.runtime_mode === "cloud" ? (
                   <Cloud className="h-4 w-4 shrink-0 text-muted-foreground" />
                 ) : (
                   <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{selectedRuntime.name}</span>
-                    {selectedRuntime.runtime_mode === "cloud" && (
+                    <span className="truncate font-medium">
+                      {selectedRuntime?.name ?? "No runtime available"}
+                    </span>
+                    {selectedRuntime?.runtime_mode === "cloud" && (
                       <span className="shrink-0 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
                         Cloud
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">{selectedRuntime.device_info}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedRuntime?.device_info ?? "Register a runtime before creating an agent"}
+                  </div>
                 </div>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${runtimeOpen ? "rotate-180" : ""}`} />
               </button>
@@ -230,7 +197,7 @@ function CreateAgentDialog({
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setRuntimeOpen(false)} />
                   <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border bg-popover p-1 shadow-md">
-                    {MOCK_RUNTIME_DEVICES.map((device) => (
+                    {runtimes.map((device) => (
                       <button
                         key={device.id}
                         onClick={() => {
@@ -280,7 +247,7 @@ function CreateAgentDialog({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={creating || !name.trim()}
+            disabled={creating || !name.trim() || !selectedRuntime}
             className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {creating ? "Creating..." : "Create"}
@@ -899,15 +866,17 @@ const detailTabs: { id: DetailTab; label: string; icon: typeof FileText }[] = [
 
 function AgentDetail({
   agent,
+  runtimes,
   onUpdate,
   onDelete,
 }: {
   agent: Agent;
+  runtimes: RuntimeDevice[];
   onUpdate: (id: string, data: Partial<Agent>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const st = statusConfig[agent.status];
-  const runtimeDevice = getRuntimeDevice(agent);
+  const runtimeDevice = getRuntimeDevice(agent, runtimes);
   const [activeTab, setActiveTab] = useState<DetailTab>("skills");
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1055,9 +1024,21 @@ function AgentDetail({
 // ---------------------------------------------------------------------------
 
 export default function AgentsPage() {
-  const { agents, refreshAgents, isLoading } = useAuth();
+  const { agents, refreshAgents, workspace, isLoading } = useAuth();
   const [selectedId, setSelectedId] = useState<string>("");
   const [showCreate, setShowCreate] = useState(false);
+  const [runtimes, setRuntimes] = useState<RuntimeDevice[]>([]);
+
+  useEffect(() => {
+    if (!workspace) {
+      setRuntimes([]);
+      return;
+    }
+    api
+      .listRuntimes({ workspace_id: workspace.id })
+      .then(setRuntimes)
+      .catch(() => setRuntimes([]));
+  }, [workspace]);
 
   // Select first agent on initial load
   useEffect(() => {
@@ -1147,6 +1128,7 @@ export default function AgentsPage() {
         {selected ? (
           <AgentDetail
             agent={selected}
+            runtimes={runtimes}
             onUpdate={handleUpdate}
             onDelete={handleDelete}
           />
@@ -1167,6 +1149,7 @@ export default function AgentsPage() {
 
       {showCreate && (
         <CreateAgentDialog
+          runtimes={runtimes}
           onClose={() => setShowCreate(false)}
           onCreate={handleCreate}
         />

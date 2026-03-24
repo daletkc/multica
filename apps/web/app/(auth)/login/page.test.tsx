@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/login",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // Mock auth-context
@@ -68,7 +69,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith("test@multica.ai", "Test User");
+      expect(mockLogin).toHaveBeenCalledWith("test@multica.ai", "Test User", undefined);
     });
   });
 
@@ -81,7 +82,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith("test@multica.ai", undefined);
+      expect(mockLogin).toHaveBeenCalledWith("test@multica.ai", undefined, undefined);
     });
   });
 

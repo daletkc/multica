@@ -8,6 +8,7 @@ export type {
   AgentTool,
   AgentTrigger,
   AgentTask,
+  AgentRuntime,
   RuntimeDevice,
   CreateAgentRequest,
   UpdateAgentRequest,
@@ -15,5 +16,6 @@ export type {
 export type { Workspace, Member, MemberRole, User, MemberWithUser } from "./workspace.js";
 export type { InboxItem, InboxSeverity, InboxItemType } from "./inbox.js";
 export type { Comment, CommentType, CommentAuthorType } from "./comment.js";
+export type { DaemonPairingSession, DaemonPairingSessionStatus, ApproveDaemonPairingSessionRequest } from "./daemon.js";
 export type * from "./events.js";
 export type * from "./api.js";

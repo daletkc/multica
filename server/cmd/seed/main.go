@@ -114,10 +114,37 @@ func main() {
 			continue
 		}
 		err = pool.QueryRow(ctx, `
-			INSERT INTO agent (workspace_id, name, description, runtime_mode, status, owner_id, skills, tools, triggers)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+			INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at)
+			VALUES (
+				$1,
+				NULL,
+				$2,
+				$3,
+				$4,
+				$5,
+				$6,
+				'{"seed":true}'::jsonb,
+				CASE WHEN $5 = 'online' THEN now() ELSE NULL END
+			)
 			RETURNING id
-		`, workspaceID, a.name, a.description, a.runtimeMode, a.status, userID, a.skills, a.tools, a.triggers).Scan(&agentID)
+		`,
+			workspaceID,
+			a.name+" Runtime",
+			a.runtimeMode,
+			map[string]string{"cloud": "multica_agent", "local": "seed_local"}[a.runtimeMode],
+			map[bool]string{true: "offline", false: "online"}[a.status == "offline"],
+			map[string]string{"cloud": "Seeded cloud runtime", "local": "Seeded local runtime"}[a.runtimeMode],
+		).Scan(&agentID)
+		if err != nil {
+			log.Printf("Failed to create runtime for agent %s: %v", a.name, err)
+			continue
+		}
+		runtimeID := agentID
+		err = pool.QueryRow(ctx, `
+			INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_id, status, owner_id, skills, tools, triggers)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+			RETURNING id
+		`, workspaceID, a.name, a.description, a.runtimeMode, runtimeID, a.status, userID, a.skills, a.tools, a.triggers).Scan(&agentID)
 		if err != nil {
 			log.Printf("Failed to create agent %s: %v", a.name, err)
 			continue

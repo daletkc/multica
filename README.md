@@ -106,6 +106,27 @@ See [`.env.example`](.env.example) for all available variables:
 - `PORT` — Backend server port (default: 8080)
 - `FRONTEND_PORT` / `FRONTEND_ORIGIN` — Frontend port and browser origin
 - `JWT_SECRET` — JWT signing secret
+- `MULTICA_APP_URL` — Browser origin used when generating local runtime pairing links
+- `MULTICA_DAEMON_CONFIG` — Optional path for the daemon's persisted local config
+- `MULTICA_WORKSPACE_ID` — Optional dev override for the workspace id; normal usage should rely on browser pairing instead
+- `MULTICA_DAEMON_ID` / `MULTICA_DAEMON_DEVICE_NAME` — Stable daemon identity for local runtime registration
+- `MULTICA_CODEX_PATH` / `MULTICA_CODEX_MODEL` — Codex executable and optional model override for local task execution
+- `MULTICA_CODEX_WORKDIR` — Default working directory used by the local Codex runtime
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — Google OAuth (optional)
 - `NEXT_PUBLIC_API_URL` — Frontend → backend API URL
 - `NEXT_PUBLIC_WS_URL` — Frontend → backend WebSocket URL
+
+## Local Codex Daemon
+
+The local daemon currently supports one local runtime type: `codex`.
+
+1. Start the daemon with `make daemon`.
+2. If the daemon does not already know its workspace, it prints a pairing link in the terminal.
+3. Open that link in the browser, sign in, and choose the workspace that should own the local Codex runtime.
+4. The daemon stores the approved workspace locally in `MULTICA_DAEMON_CONFIG` or `~/.multica/daemon.json`.
+5. The daemon registers the local Codex runtime via `/api/daemon/register`.
+6. Create an agent in Multica and bind it to that runtime.
+7. Assign an issue to the agent and move the issue to `todo`.
+8. The daemon claims the task, runs `codex exec`, and reports the final comment back to the issue.
+
+For local development you can still set `MULTICA_WORKSPACE_ID` directly to skip pairing, but that should be treated as a debug shortcut rather than the normal flow.

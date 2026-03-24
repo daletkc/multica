@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -13,9 +15,11 @@ import (
 // ---------------------------------------------------------------------------
 
 type DaemonRegisterRequest struct {
-	DaemonID string `json:"daemon_id"`
-	AgentID  string `json:"agent_id"`
-	Runtimes []struct {
+	WorkspaceID string `json:"workspace_id"`
+	DaemonID    string `json:"daemon_id"`
+	DeviceName  string `json:"device_name"`
+	Runtimes    []struct {
+		Name    string `json:"name"`
 		Type    string `json:"type"`
 		Version string `json:"version"`
 		Status  string `json:"status"`
@@ -29,36 +33,68 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.DaemonID == "" || req.AgentID == "" {
-		writeError(w, http.StatusBadRequest, "daemon_id and agent_id are required")
+	if req.DaemonID == "" {
+		writeError(w, http.StatusBadRequest, "daemon_id is required")
+		return
+	}
+	if req.WorkspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if len(req.Runtimes) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one runtime is required")
 		return
 	}
 
-	runtimeInfo, _ := json.Marshal(req.Runtimes)
+	resp := make([]AgentRuntimeResponse, 0, len(req.Runtimes))
+	for _, runtime := range req.Runtimes {
+		provider := strings.TrimSpace(runtime.Type)
+		if provider == "" {
+			provider = "unknown"
+		}
+		name := strings.TrimSpace(runtime.Name)
+		if name == "" {
+			name = provider
+			if req.DeviceName != "" {
+				name = fmt.Sprintf("%s (%s)", provider, req.DeviceName)
+			}
+		}
+		deviceInfo := strings.TrimSpace(req.DeviceName)
+		if runtime.Version != "" && deviceInfo != "" {
+			deviceInfo = fmt.Sprintf("%s · %s", deviceInfo, runtime.Version)
+		} else if runtime.Version != "" {
+			deviceInfo = runtime.Version
+		}
+		status := "online"
+		if runtime.Status == "offline" {
+			status = "offline"
+		}
+		metadata, _ := json.Marshal(map[string]any{
+			"version": runtime.Version,
+		})
 
-	conn, err := h.Queries.UpsertDaemonConnection(r.Context(), db.UpsertDaemonConnectionParams{
-		AgentID:     parseUUID(req.AgentID),
-		DaemonID:    req.DaemonID,
-		RuntimeInfo: runtimeInfo,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to register daemon: "+err.Error())
-		return
+		registered, err := h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{
+			WorkspaceID: parseUUID(req.WorkspaceID),
+			DaemonID:    strToText(req.DaemonID),
+			Name:        name,
+			RuntimeMode: "local",
+			Provider:    provider,
+			Status:      status,
+			DeviceInfo:  deviceInfo,
+			Metadata:    metadata,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to register runtime: "+err.Error())
+			return
+		}
+		resp = append(resp, runtimeToResponse(registered))
 	}
 
-	// Reconcile agent status (set to idle if no running tasks)
-	h.TaskService.ReconcileAgentStatus(r.Context(), parseUUID(req.AgentID))
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"connection_id": uuidToString(conn.ID),
-		"status":        conn.Status,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"runtimes": resp})
 }
 
 type DaemonHeartbeatRequest struct {
-	DaemonID     string `json:"daemon_id"`
-	AgentID      string `json:"agent_id"`
-	CurrentTasks int    `json:"current_tasks"`
+	RuntimeID string `json:"runtime_id"`
 }
 
 func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -68,10 +104,12 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.UpdateDaemonHeartbeat(r.Context(), db.UpdateDaemonHeartbeatParams{
-		DaemonID: req.DaemonID,
-		AgentID:  parseUUID(req.AgentID),
-	})
+	if req.RuntimeID == "" {
+		writeError(w, http.StatusBadRequest, "runtime_id is required")
+		return
+	}
+
+	_, err := h.Queries.UpdateAgentRuntimeHeartbeat(r.Context(), parseUUID(req.RuntimeID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "heartbeat failed")
 		return
@@ -80,15 +118,11 @@ func (h *Handler) DaemonHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// ---------------------------------------------------------------------------
-// Task Lifecycle (called by daemon)
-// ---------------------------------------------------------------------------
+// ClaimTaskByRuntime atomically claims the next queued task for a runtime.
+func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
+	runtimeID := chi.URLParam(r, "runtimeId")
 
-// ClaimTask atomically claims the next queued task for an agent.
-func (h *Handler) ClaimTask(w http.ResponseWriter, r *http.Request) {
-	agentID := chi.URLParam(r, "agentId")
-
-	task, err := h.TaskService.ClaimTask(r.Context(), parseUUID(agentID))
+	task, err := h.TaskService.ClaimTaskForRuntime(r.Context(), parseUUID(runtimeID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to claim task: "+err.Error())
 		return
@@ -102,11 +136,11 @@ func (h *Handler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"task": taskToResponse(*task)})
 }
 
-// ListPendingTasks returns queued/dispatched tasks for an agent.
-func (h *Handler) ListPendingTasks(w http.ResponseWriter, r *http.Request) {
-	agentID := chi.URLParam(r, "agentId")
+// ListPendingTasksByRuntime returns queued/dispatched tasks for a runtime.
+func (h *Handler) ListPendingTasksByRuntime(w http.ResponseWriter, r *http.Request) {
+	runtimeID := chi.URLParam(r, "runtimeId")
 
-	tasks, err := h.Queries.ListPendingTasks(r.Context(), parseUUID(agentID))
+	tasks, err := h.Queries.ListPendingTasksByRuntime(r.Context(), parseUUID(runtimeID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list pending tasks")
 		return
@@ -119,6 +153,10 @@ func (h *Handler) ListPendingTasks(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// ---------------------------------------------------------------------------
+// Task Lifecycle (called by daemon)
+// ---------------------------------------------------------------------------
 
 // StartTask marks a dispatched task as running.
 func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {

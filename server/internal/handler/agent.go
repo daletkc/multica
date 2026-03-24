@@ -12,6 +12,7 @@ import (
 type AgentResponse struct {
 	ID                 string  `json:"id"`
 	WorkspaceID        string  `json:"workspace_id"`
+	RuntimeID          string  `json:"runtime_id"`
 	Name               string  `json:"name"`
 	Description        string  `json:"description"`
 	AvatarURL          *string `json:"avatar_url"`
@@ -56,6 +57,7 @@ func agentToResponse(a db.Agent) AgentResponse {
 	return AgentResponse{
 		ID:                 uuidToString(a.ID),
 		WorkspaceID:        uuidToString(a.WorkspaceID),
+		RuntimeID:          uuidToString(a.RuntimeID),
 		Name:               a.Name,
 		Description:        a.Description,
 		AvatarURL:          textToPtr(a.AvatarUrl),
@@ -76,6 +78,7 @@ func agentToResponse(a db.Agent) AgentResponse {
 type AgentTaskResponse struct {
 	ID           string  `json:"id"`
 	AgentID      string  `json:"agent_id"`
+	RuntimeID    string  `json:"runtime_id"`
 	IssueID      string  `json:"issue_id"`
 	Status       string  `json:"status"`
 	Priority     int32   `json:"priority"`
@@ -100,6 +103,7 @@ func taskToResponse(t db.AgentTaskQueue) AgentTaskResponse {
 	return AgentTaskResponse{
 		ID:           uuidToString(t.ID),
 		AgentID:      uuidToString(t.AgentID),
+		RuntimeID:    uuidToString(t.RuntimeID),
 		IssueID:      uuidToString(t.IssueID),
 		Status:       t.Status,
 		Priority:     t.Priority,
@@ -146,7 +150,7 @@ type CreateAgentRequest struct {
 	Name               string  `json:"name"`
 	Description        string  `json:"description"`
 	AvatarURL          *string `json:"avatar_url"`
-	RuntimeMode        string  `json:"runtime_mode"`
+	RuntimeID          string  `json:"runtime_id"`
 	RuntimeConfig      any     `json:"runtime_config"`
 	Visibility         string  `json:"visibility"`
 	MaxConcurrentTasks int32   `json:"max_concurrent_tasks"`
@@ -176,14 +180,24 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if req.RuntimeMode == "" {
-		req.RuntimeMode = "local"
+	if req.RuntimeID == "" {
+		writeError(w, http.StatusBadRequest, "runtime_id is required")
+		return
 	}
 	if req.Visibility == "" {
 		req.Visibility = "workspace"
 	}
 	if req.MaxConcurrentTasks == 0 {
 		req.MaxConcurrentTasks = 1
+	}
+
+	runtime, err := h.Queries.GetAgentRuntimeForWorkspace(r.Context(), db.GetAgentRuntimeForWorkspaceParams{
+		ID:          parseUUID(req.RuntimeID),
+		WorkspaceID: parseUUID(workspaceID),
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid runtime_id")
+		return
 	}
 
 	rc, _ := json.Marshal(req.RuntimeConfig)
@@ -206,8 +220,9 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		Name:               req.Name,
 		Description:        req.Description,
 		AvatarUrl:          ptrToText(req.AvatarURL),
-		RuntimeMode:        req.RuntimeMode,
+		RuntimeMode:        runtime.RuntimeMode,
 		RuntimeConfig:      rc,
+		RuntimeID:          runtime.ID,
 		Visibility:         req.Visibility,
 		MaxConcurrentTasks: req.MaxConcurrentTasks,
 		OwnerID:            parseUUID(ownerID),
@@ -220,6 +235,11 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if runtime.Status == "online" {
+		h.TaskService.ReconcileAgentStatus(r.Context(), agent.ID)
+		agent, _ = h.Queries.GetAgent(r.Context(), agent.ID)
+	}
+
 	writeJSON(w, http.StatusCreated, agentToResponse(agent))
 }
 
@@ -227,6 +247,7 @@ type UpdateAgentRequest struct {
 	Name               *string `json:"name"`
 	Description        *string `json:"description"`
 	AvatarURL          *string `json:"avatar_url"`
+	RuntimeID          *string `json:"runtime_id"`
 	RuntimeConfig      any     `json:"runtime_config"`
 	Visibility         *string `json:"visibility"`
 	Status             *string `json:"status"`
@@ -267,6 +288,18 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if req.RuntimeConfig != nil {
 		rc, _ := json.Marshal(req.RuntimeConfig)
 		params.RuntimeConfig = rc
+	}
+	if req.RuntimeID != nil {
+		runtime, err := h.Queries.GetAgentRuntimeForWorkspace(r.Context(), db.GetAgentRuntimeForWorkspaceParams{
+			ID:          parseUUID(*req.RuntimeID),
+			WorkspaceID: agent.WorkspaceID,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid runtime_id")
+			return
+		}
+		params.RuntimeID = runtime.ID
+		params.RuntimeMode = pgtype.Text{String: runtime.RuntimeMode, Valid: true}
 	}
 	if req.Visibility != nil {
 		params.Visibility = pgtype.Text{String: *req.Visibility, Valid: true}

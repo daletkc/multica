@@ -113,7 +113,7 @@ dev:
 	cd server && go run ./cmd/server
 
 daemon:
-	cd server && go run ./cmd/daemon
+	cd server && MULTICA_CODEX_WORKDIR="${MULTICA_CODEX_WORKDIR:-$(abspath .)}" go run ./cmd/daemon
 
 build:
 	cd server && go build -o bin/server ./cmd/server

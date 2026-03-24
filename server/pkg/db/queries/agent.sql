@@ -10,9 +10,9 @@ WHERE id = $1;
 -- name: CreateAgent :one
 INSERT INTO agent (
     workspace_id, name, description, avatar_url, runtime_mode,
-    runtime_config, visibility, max_concurrent_tasks, owner_id,
+    runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
     skills, tools, triggers
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: UpdateAgent :one
@@ -21,6 +21,8 @@ UPDATE agent SET
     description = COALESCE(sqlc.narg('description'), description),
     avatar_url = COALESCE(sqlc.narg('avatar_url'), avatar_url),
     runtime_config = COALESCE(sqlc.narg('runtime_config'), runtime_config),
+    runtime_mode = COALESCE(sqlc.narg('runtime_mode'), runtime_mode),
+    runtime_id = COALESCE(sqlc.narg('runtime_id'), runtime_id),
     visibility = COALESCE(sqlc.narg('visibility'), visibility),
     status = COALESCE(sqlc.narg('status'), status),
     max_concurrent_tasks = COALESCE(sqlc.narg('max_concurrent_tasks'), max_concurrent_tasks),
@@ -40,8 +42,8 @@ WHERE agent_id = $1
 ORDER BY created_at DESC;
 
 -- name: CreateAgentTask :one
-INSERT INTO agent_task_queue (agent_id, issue_id, status, priority)
-VALUES ($1, $2, 'queued', $3)
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)
+VALUES ($1, $2, $3, 'queued', $4)
 RETURNING *;
 
 -- name: CancelAgentTasksByIssue :exec
@@ -54,8 +56,8 @@ SELECT * FROM agent_task_queue
 WHERE id = $1;
 
 -- name: CreateAgentTaskWithContext :one
-INSERT INTO agent_task_queue (agent_id, issue_id, status, priority, context)
-VALUES ($1, $2, 'queued', $3, $4)
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, context)
+VALUES ($1, $2, $3, 'queued', $4, $5)
 RETURNING *;
 
 -- name: ClaimAgentTask :one
@@ -92,29 +94,12 @@ RETURNING *;
 SELECT count(*) FROM agent_task_queue
 WHERE agent_id = $1 AND status IN ('dispatched', 'running');
 
--- name: ListPendingTasks :many
+-- name: ListPendingTasksByRuntime :many
 SELECT * FROM agent_task_queue
-WHERE agent_id = $1 AND status IN ('queued', 'dispatched')
+WHERE runtime_id = $1 AND status IN ('queued', 'dispatched')
 ORDER BY priority DESC, created_at ASC;
 
 -- name: UpdateAgentStatus :one
 UPDATE agent SET status = $2, updated_at = now()
 WHERE id = $1
 RETURNING *;
-
--- name: UpsertDaemonConnection :one
-INSERT INTO daemon_connection (agent_id, daemon_id, status, last_heartbeat_at, runtime_info)
-VALUES ($1, $2, 'connected', now(), $3)
-ON CONFLICT ON CONSTRAINT uq_daemon_agent
-DO UPDATE SET status = 'connected', last_heartbeat_at = now(), runtime_info = $3, updated_at = now()
-RETURNING *;
-
--- name: UpdateDaemonHeartbeat :exec
-UPDATE daemon_connection
-SET last_heartbeat_at = now(), updated_at = now()
-WHERE daemon_id = $1 AND agent_id = $2;
-
--- name: DisconnectDaemon :exec
-UPDATE daemon_connection
-SET status = 'disconnected', updated_at = now()
-WHERE daemon_id = $1;

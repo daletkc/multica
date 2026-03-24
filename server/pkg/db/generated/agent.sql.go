@@ -32,7 +32,7 @@ WHERE id = (
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 func (q *Queries) ClaimAgentTask(ctx context.Context, agentID pgtype.UUID) (AgentTaskQueue, error) {
@@ -51,6 +51,7 @@ func (q *Queries) ClaimAgentTask(ctx context.Context, agentID pgtype.UUID) (Agen
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
@@ -59,7 +60,7 @@ const completeAgentTask = `-- name: CompleteAgentTask :one
 UPDATE agent_task_queue
 SET status = 'completed', completed_at = now(), result = $2
 WHERE id = $1 AND status = 'running'
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 type CompleteAgentTaskParams struct {
@@ -83,6 +84,7 @@ func (q *Queries) CompleteAgentTask(ctx context.Context, arg CompleteAgentTaskPa
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
@@ -102,10 +104,10 @@ func (q *Queries) CountRunningTasks(ctx context.Context, agentID pgtype.UUID) (i
 const createAgent = `-- name: CreateAgent :one
 INSERT INTO agent (
     workspace_id, name, description, avatar_url, runtime_mode,
-    runtime_config, visibility, max_concurrent_tasks, owner_id,
+    runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
     skills, tools, triggers
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers, runtime_id
 `
 
 type CreateAgentParams struct {
@@ -115,6 +117,7 @@ type CreateAgentParams struct {
 	AvatarUrl          pgtype.Text `json:"avatar_url"`
 	RuntimeMode        string      `json:"runtime_mode"`
 	RuntimeConfig      []byte      `json:"runtime_config"`
+	RuntimeID          pgtype.UUID `json:"runtime_id"`
 	Visibility         string      `json:"visibility"`
 	MaxConcurrentTasks int32       `json:"max_concurrent_tasks"`
 	OwnerID            pgtype.UUID `json:"owner_id"`
@@ -131,6 +134,7 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent
 		arg.AvatarUrl,
 		arg.RuntimeMode,
 		arg.RuntimeConfig,
+		arg.RuntimeID,
 		arg.Visibility,
 		arg.MaxConcurrentTasks,
 		arg.OwnerID,
@@ -156,24 +160,31 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) (Agent
 		&i.Skills,
 		&i.Tools,
 		&i.Triggers,
+		&i.RuntimeID,
 	)
 	return i, err
 }
 
 const createAgentTask = `-- name: CreateAgentTask :one
-INSERT INTO agent_task_queue (agent_id, issue_id, status, priority)
-VALUES ($1, $2, 'queued', $3)
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)
+VALUES ($1, $2, $3, 'queued', $4)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 type CreateAgentTaskParams struct {
-	AgentID  pgtype.UUID `json:"agent_id"`
-	IssueID  pgtype.UUID `json:"issue_id"`
-	Priority int32       `json:"priority"`
+	AgentID   pgtype.UUID `json:"agent_id"`
+	RuntimeID pgtype.UUID `json:"runtime_id"`
+	IssueID   pgtype.UUID `json:"issue_id"`
+	Priority  int32       `json:"priority"`
 }
 
 func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams) (AgentTaskQueue, error) {
-	row := q.db.QueryRow(ctx, createAgentTask, arg.AgentID, arg.IssueID, arg.Priority)
+	row := q.db.QueryRow(ctx, createAgentTask,
+		arg.AgentID,
+		arg.RuntimeID,
+		arg.IssueID,
+		arg.Priority,
+	)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,
@@ -188,26 +199,29 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
 
 const createAgentTaskWithContext = `-- name: CreateAgentTaskWithContext :one
-INSERT INTO agent_task_queue (agent_id, issue_id, status, priority, context)
-VALUES ($1, $2, 'queued', $3, $4)
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, context)
+VALUES ($1, $2, $3, 'queued', $4, $5)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 type CreateAgentTaskWithContextParams struct {
-	AgentID  pgtype.UUID `json:"agent_id"`
-	IssueID  pgtype.UUID `json:"issue_id"`
-	Priority int32       `json:"priority"`
-	Context  []byte      `json:"context"`
+	AgentID   pgtype.UUID `json:"agent_id"`
+	RuntimeID pgtype.UUID `json:"runtime_id"`
+	IssueID   pgtype.UUID `json:"issue_id"`
+	Priority  int32       `json:"priority"`
+	Context   []byte      `json:"context"`
 }
 
 func (q *Queries) CreateAgentTaskWithContext(ctx context.Context, arg CreateAgentTaskWithContextParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, createAgentTaskWithContext,
 		arg.AgentID,
+		arg.RuntimeID,
 		arg.IssueID,
 		arg.Priority,
 		arg.Context,
@@ -226,6 +240,7 @@ func (q *Queries) CreateAgentTaskWithContext(ctx context.Context, arg CreateAgen
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
@@ -239,22 +254,11 @@ func (q *Queries) DeleteAgent(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const disconnectDaemon = `-- name: DisconnectDaemon :exec
-UPDATE daemon_connection
-SET status = 'disconnected', updated_at = now()
-WHERE daemon_id = $1
-`
-
-func (q *Queries) DisconnectDaemon(ctx context.Context, daemonID string) error {
-	_, err := q.db.Exec(ctx, disconnectDaemon, daemonID)
-	return err
-}
-
 const failAgentTask = `-- name: FailAgentTask :one
 UPDATE agent_task_queue
 SET status = 'failed', completed_at = now(), error = $2
 WHERE id = $1 AND status = 'running'
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 type FailAgentTaskParams struct {
@@ -278,12 +282,13 @@ func (q *Queries) FailAgentTask(ctx context.Context, arg FailAgentTaskParams) (A
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers FROM agent
+SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers, runtime_id FROM agent
 WHERE id = $1
 `
 
@@ -307,12 +312,13 @@ func (q *Queries) GetAgent(ctx context.Context, id pgtype.UUID) (Agent, error) {
 		&i.Skills,
 		&i.Tools,
 		&i.Triggers,
+		&i.RuntimeID,
 	)
 	return i, err
 }
 
 const getAgentTask = `-- name: GetAgentTask :one
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context FROM agent_task_queue
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id FROM agent_task_queue
 WHERE id = $1
 `
 
@@ -332,12 +338,13 @@ func (q *Queries) GetAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQu
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
 
 const listAgentTasks = `-- name: ListAgentTasks :many
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context FROM agent_task_queue
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id FROM agent_task_queue
 WHERE agent_id = $1
 ORDER BY created_at DESC
 `
@@ -364,6 +371,7 @@ func (q *Queries) ListAgentTasks(ctx context.Context, agentID pgtype.UUID) ([]Ag
 			&i.Error,
 			&i.CreatedAt,
 			&i.Context,
+			&i.RuntimeID,
 		); err != nil {
 			return nil, err
 		}
@@ -376,7 +384,7 @@ func (q *Queries) ListAgentTasks(ctx context.Context, agentID pgtype.UUID) ([]Ag
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers FROM agent
+SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers, runtime_id FROM agent
 WHERE workspace_id = $1
 ORDER BY created_at ASC
 `
@@ -407,6 +415,7 @@ func (q *Queries) ListAgents(ctx context.Context, workspaceID pgtype.UUID) ([]Ag
 			&i.Skills,
 			&i.Tools,
 			&i.Triggers,
+			&i.RuntimeID,
 		); err != nil {
 			return nil, err
 		}
@@ -418,14 +427,14 @@ func (q *Queries) ListAgents(ctx context.Context, workspaceID pgtype.UUID) ([]Ag
 	return items, nil
 }
 
-const listPendingTasks = `-- name: ListPendingTasks :many
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context FROM agent_task_queue
-WHERE agent_id = $1 AND status IN ('queued', 'dispatched')
+const listPendingTasksByRuntime = `-- name: ListPendingTasksByRuntime :many
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id FROM agent_task_queue
+WHERE runtime_id = $1 AND status IN ('queued', 'dispatched')
 ORDER BY priority DESC, created_at ASC
 `
 
-func (q *Queries) ListPendingTasks(ctx context.Context, agentID pgtype.UUID) ([]AgentTaskQueue, error) {
-	rows, err := q.db.Query(ctx, listPendingTasks, agentID)
+func (q *Queries) ListPendingTasksByRuntime(ctx context.Context, runtimeID pgtype.UUID) ([]AgentTaskQueue, error) {
+	rows, err := q.db.Query(ctx, listPendingTasksByRuntime, runtimeID)
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +455,7 @@ func (q *Queries) ListPendingTasks(ctx context.Context, agentID pgtype.UUID) ([]
 			&i.Error,
 			&i.CreatedAt,
 			&i.Context,
+			&i.RuntimeID,
 		); err != nil {
 			return nil, err
 		}
@@ -461,7 +471,7 @@ const startAgentTask = `-- name: StartAgentTask :one
 UPDATE agent_task_queue
 SET status = 'running', started_at = now()
 WHERE id = $1 AND status = 'dispatched'
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id
 `
 
 func (q *Queries) StartAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
@@ -480,6 +490,7 @@ func (q *Queries) StartAgentTask(ctx context.Context, id pgtype.UUID) (AgentTask
 		&i.Error,
 		&i.CreatedAt,
 		&i.Context,
+		&i.RuntimeID,
 	)
 	return i, err
 }
@@ -490,15 +501,17 @@ UPDATE agent SET
     description = COALESCE($3, description),
     avatar_url = COALESCE($4, avatar_url),
     runtime_config = COALESCE($5, runtime_config),
-    visibility = COALESCE($6, visibility),
-    status = COALESCE($7, status),
-    max_concurrent_tasks = COALESCE($8, max_concurrent_tasks),
-    skills = COALESCE($9, skills),
-    tools = COALESCE($10, tools),
-    triggers = COALESCE($11, triggers),
+    runtime_mode = COALESCE($6, runtime_mode),
+    runtime_id = COALESCE($7, runtime_id),
+    visibility = COALESCE($8, visibility),
+    status = COALESCE($9, status),
+    max_concurrent_tasks = COALESCE($10, max_concurrent_tasks),
+    skills = COALESCE($11, skills),
+    tools = COALESCE($12, tools),
+    triggers = COALESCE($13, triggers),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers, runtime_id
 `
 
 type UpdateAgentParams struct {
@@ -507,6 +520,8 @@ type UpdateAgentParams struct {
 	Description        pgtype.Text `json:"description"`
 	AvatarUrl          pgtype.Text `json:"avatar_url"`
 	RuntimeConfig      []byte      `json:"runtime_config"`
+	RuntimeMode        pgtype.Text `json:"runtime_mode"`
+	RuntimeID          pgtype.UUID `json:"runtime_id"`
 	Visibility         pgtype.Text `json:"visibility"`
 	Status             pgtype.Text `json:"status"`
 	MaxConcurrentTasks pgtype.Int4 `json:"max_concurrent_tasks"`
@@ -522,6 +537,8 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		arg.Description,
 		arg.AvatarUrl,
 		arg.RuntimeConfig,
+		arg.RuntimeMode,
+		arg.RuntimeID,
 		arg.Visibility,
 		arg.Status,
 		arg.MaxConcurrentTasks,
@@ -547,6 +564,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		&i.Skills,
 		&i.Tools,
 		&i.Triggers,
+		&i.RuntimeID,
 	)
 	return i, err
 }
@@ -554,7 +572,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 const updateAgentStatus = `-- name: UpdateAgentStatus :one
 UPDATE agent SET status = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, skills, tools, triggers, runtime_id
 `
 
 type UpdateAgentStatusParams struct {
@@ -582,52 +600,7 @@ func (q *Queries) UpdateAgentStatus(ctx context.Context, arg UpdateAgentStatusPa
 		&i.Skills,
 		&i.Tools,
 		&i.Triggers,
-	)
-	return i, err
-}
-
-const updateDaemonHeartbeat = `-- name: UpdateDaemonHeartbeat :exec
-UPDATE daemon_connection
-SET last_heartbeat_at = now(), updated_at = now()
-WHERE daemon_id = $1 AND agent_id = $2
-`
-
-type UpdateDaemonHeartbeatParams struct {
-	DaemonID string      `json:"daemon_id"`
-	AgentID  pgtype.UUID `json:"agent_id"`
-}
-
-func (q *Queries) UpdateDaemonHeartbeat(ctx context.Context, arg UpdateDaemonHeartbeatParams) error {
-	_, err := q.db.Exec(ctx, updateDaemonHeartbeat, arg.DaemonID, arg.AgentID)
-	return err
-}
-
-const upsertDaemonConnection = `-- name: UpsertDaemonConnection :one
-INSERT INTO daemon_connection (agent_id, daemon_id, status, last_heartbeat_at, runtime_info)
-VALUES ($1, $2, 'connected', now(), $3)
-ON CONFLICT ON CONSTRAINT uq_daemon_agent
-DO UPDATE SET status = 'connected', last_heartbeat_at = now(), runtime_info = $3, updated_at = now()
-RETURNING id, agent_id, daemon_id, status, last_heartbeat_at, runtime_info, created_at, updated_at
-`
-
-type UpsertDaemonConnectionParams struct {
-	AgentID     pgtype.UUID `json:"agent_id"`
-	DaemonID    string      `json:"daemon_id"`
-	RuntimeInfo []byte      `json:"runtime_info"`
-}
-
-func (q *Queries) UpsertDaemonConnection(ctx context.Context, arg UpsertDaemonConnectionParams) (DaemonConnection, error) {
-	row := q.db.QueryRow(ctx, upsertDaemonConnection, arg.AgentID, arg.DaemonID, arg.RuntimeInfo)
-	var i DaemonConnection
-	err := row.Scan(
-		&i.ID,
-		&i.AgentID,
-		&i.DaemonID,
-		&i.Status,
-		&i.LastHeartbeatAt,
-		&i.RuntimeInfo,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.RuntimeID,
 	)
 	return i, err
 }

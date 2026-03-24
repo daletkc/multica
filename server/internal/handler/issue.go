@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,24 +15,30 @@ import (
 
 // IssueResponse is the JSON response for an issue.
 type IssueResponse struct {
-	ID                 string   `json:"id"`
-	WorkspaceID        string   `json:"workspace_id"`
-	Title              string   `json:"title"`
-	Description        *string  `json:"description"`
-	Status             string   `json:"status"`
-	Priority           string   `json:"priority"`
-	AssigneeType       *string  `json:"assignee_type"`
-	AssigneeID         *string  `json:"assignee_id"`
-	CreatorType        string   `json:"creator_type"`
-	CreatorID          string   `json:"creator_id"`
-	ParentIssueID      *string  `json:"parent_issue_id"`
-	AcceptanceCriteria []any    `json:"acceptance_criteria"`
-	ContextRefs        []any    `json:"context_refs"`
-	Repository         any      `json:"repository"`
-	Position           float64  `json:"position"`
-	DueDate            *string  `json:"due_date"`
-	CreatedAt          string   `json:"created_at"`
-	UpdatedAt          string   `json:"updated_at"`
+	ID                 string  `json:"id"`
+	WorkspaceID        string  `json:"workspace_id"`
+	Title              string  `json:"title"`
+	Description        *string `json:"description"`
+	Status             string  `json:"status"`
+	Priority           string  `json:"priority"`
+	AssigneeType       *string `json:"assignee_type"`
+	AssigneeID         *string `json:"assignee_id"`
+	CreatorType        string  `json:"creator_type"`
+	CreatorID          string  `json:"creator_id"`
+	ParentIssueID      *string `json:"parent_issue_id"`
+	AcceptanceCriteria []any   `json:"acceptance_criteria"`
+	ContextRefs        []any   `json:"context_refs"`
+	Repository         any     `json:"repository"`
+	Position           float64 `json:"position"`
+	DueDate            *string `json:"due_date"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+}
+
+type agentTriggerSnapshot struct {
+	Type    string         `json:"type"`
+	Enabled bool           `json:"enabled"`
+	Config  map[string]any `json:"config"`
 }
 
 func issueToResponse(i db.Issue) IssueResponse {
@@ -258,8 +265,8 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 			h.broadcast("inbox:new", map[string]any{"item": inboxToResponse(inboxItem)})
 		}
 
-		// If assigned to an agent, enqueue a task with context
-		if issue.AssigneeType.String == "agent" {
+		// Only ready issues in todo are enqueued for agents.
+		if h.shouldEnqueueAgentTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 		}
 	}
@@ -283,12 +290,12 @@ type UpdateIssueRequest struct {
 
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	current, ok := h.loadIssueForUser(w, r, id)
+	prevIssue, ok := h.loadIssueForUser(w, r, id)
 	if !ok {
 		return
 	}
 
-	// Read body as raw bytes so we can detect which fields were explicitly sent
+	// Read body as raw bytes so we can detect which fields were explicitly sent.
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body")
@@ -307,10 +314,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Pre-fill nullable fields (bare sqlc.narg) with current values
 	params := db.UpdateIssueParams{
-		ID:           current.ID,
-		AssigneeType: current.AssigneeType,
-		AssigneeID:   current.AssigneeID,
-		DueDate:      current.DueDate,
+		ID:           prevIssue.ID,
+		AssigneeType: prevIssue.AssigneeType,
+		AssigneeID:   prevIssue.AssigneeID,
+		DueDate:      prevIssue.DueDate,
 	}
 
 	// COALESCE fields — only set when explicitly provided
@@ -379,16 +386,21 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	resp := issueToResponse(issue)
 	h.broadcast("issue:updated", map[string]any{"issue": resp})
 
-	// If assignee changed, handle agent task queue
-	if req.AssigneeType != nil || req.AssigneeID != nil {
-		// Cancel any existing agent tasks for this issue
+	assigneeChanged := (req.AssigneeType != nil || req.AssigneeID != nil) &&
+		(prevIssue.AssigneeType.String != issue.AssigneeType.String || uuidToString(prevIssue.AssigneeID) != uuidToString(issue.AssigneeID))
+	statusChanged := req.Status != nil && prevIssue.Status != issue.Status
+
+	// If assignee or readiness status changed, reconcile the task queue.
+	if assigneeChanged || statusChanged {
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 
-		// If newly assigned to an agent, enqueue a task with context
-		if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+		if h.shouldEnqueueAgentTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 		}
+	}
 
+	// If assignee changed, create a notification for the new assignee.
+	if assigneeChanged {
 		// Create inbox notification for new assignee
 		if issue.AssigneeType.Valid && issue.AssigneeID.Valid {
 			inboxItem, err := h.Queries.CreateInboxItem(r.Context(), db.CreateInboxItemParams{
@@ -425,6 +437,34 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bool {
+	if issue.Status != "todo" {
+		return false
+	}
+	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
+		return false
+	}
+
+	agent, err := h.Queries.GetAgent(ctx, issue.AssigneeID)
+	if err != nil || !agent.RuntimeID.Valid {
+		return false
+	}
+	if agent.Triggers == nil || len(agent.Triggers) == 0 {
+		return true
+	}
+
+	var triggers []agentTriggerSnapshot
+	if err := json.Unmarshal(agent.Triggers, &triggers); err != nil {
+		return false
+	}
+	for _, trigger := range triggers {
+		if trigger.Type == "on_assign" && trigger.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {

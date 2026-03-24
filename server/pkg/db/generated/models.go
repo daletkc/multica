@@ -36,6 +36,22 @@ type Agent struct {
 	Skills             string             `json:"skills"`
 	Tools              []byte             `json:"tools"`
 	Triggers           []byte             `json:"triggers"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+}
+
+type AgentRuntime struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	DaemonID    pgtype.Text        `json:"daemon_id"`
+	Name        string             `json:"name"`
+	RuntimeMode string             `json:"runtime_mode"`
+	Provider    string             `json:"provider"`
+	Status      string             `json:"status"`
+	DeviceInfo  string             `json:"device_info"`
+	Metadata    []byte             `json:"metadata"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AgentTaskQueue struct {
@@ -51,6 +67,7 @@ type AgentTaskQueue struct {
 	Error        pgtype.Text        `json:"error"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	Context      []byte             `json:"context"`
+	RuntimeID    pgtype.UUID        `json:"runtime_id"`
 }
 
 type Comment struct {

@@ -52,7 +52,7 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub) chi.Router {
 	r.Use(chimw.RequestID)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins(),
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -74,14 +74,16 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub) chi.Router {
 
 	// Daemon API routes (no user auth; daemon auth deferred to later)
 	r.Route("/api/daemon", func(r chi.Router) {
+		r.Post("/pairing-sessions", h.CreateDaemonPairingSession)
+		r.Get("/pairing-sessions/{token}", h.GetDaemonPairingSession)
+		r.Post("/pairing-sessions/{token}/claim", h.ClaimDaemonPairingSession)
+
 		r.Post("/register", h.DaemonRegister)
 		r.Post("/heartbeat", h.DaemonHeartbeat)
 
-		// Task claiming (daemon polls for work)
-		r.Post("/agents/{agentId}/tasks/claim", h.ClaimTask)
-		r.Get("/agents/{agentId}/tasks/pending", h.ListPendingTasks)
+		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
+		r.Get("/runtimes/{runtimeId}/tasks/pending", h.ListPendingTasksByRuntime)
 
-		// Task lifecycle (daemon reports status)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
 		r.Post("/tasks/{taskId}/progress", h.ReportTaskProgress)
 		r.Post("/tasks/{taskId}/complete", h.CompleteTask)
@@ -126,6 +128,12 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub) chi.Router {
 				r.Get("/tasks", h.ListAgentTasks)
 			})
 		})
+
+		r.Route("/api/runtimes", func(r chi.Router) {
+			r.Get("/", h.ListAgentRuntimes)
+		})
+
+		r.Post("/api/daemon/pairing-sessions/{token}/approve", h.ApproveDaemonPairingSession)
 
 		// Inbox
 		r.Route("/api/inbox", func(r chi.Router) {
