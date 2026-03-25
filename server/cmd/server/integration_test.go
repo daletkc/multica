@@ -717,6 +717,9 @@ func TestWebSocketIntegration(t *testing.T) {
 	}
 	defer conn.Close()
 
+	// Allow Hub goroutine to process the register and add client to room
+	time.Sleep(100 * time.Millisecond)
+
 	// Create an issue — this should trigger a WebSocket broadcast
 	resp := authRequest(t, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":  "WebSocket test issue",
