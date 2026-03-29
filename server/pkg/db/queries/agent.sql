@@ -11,8 +11,8 @@ WHERE id = $1;
 INSERT INTO agent (
     workspace_id, name, description, avatar_url, runtime_mode,
     runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
-    tools, triggers
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    tools, triggers, instructions
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: UpdateAgent :one
@@ -28,6 +28,7 @@ UPDATE agent SET
     max_concurrent_tasks = COALESCE(sqlc.narg('max_concurrent_tasks'), max_concurrent_tasks),
     tools = COALESCE(sqlc.narg('tools'), tools),
     triggers = COALESCE(sqlc.narg('triggers'), triggers),
+    instructions = COALESCE(sqlc.narg('instructions'), instructions),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -74,9 +75,17 @@ RETURNING *;
 
 -- name: CompleteAgentTask :one
 UPDATE agent_task_queue
-SET status = 'completed', completed_at = now(), result = $2
+SET status = 'completed', completed_at = now(), result = $2, session_id = $3, work_dir = $4
 WHERE id = $1 AND status = 'running'
 RETURNING *;
+
+-- name: GetLastTaskSession :one
+-- Returns the session_id and work_dir from the most recent completed task
+-- for a given (agent_id, issue_id) pair, used for session resumption.
+SELECT session_id, work_dir FROM agent_task_queue
+WHERE agent_id = $1 AND issue_id = $2 AND status = 'completed' AND session_id IS NOT NULL
+ORDER BY completed_at DESC
+LIMIT 1;
 
 -- name: FailAgentTask :one
 UPDATE agent_task_queue
@@ -87,6 +96,19 @@ RETURNING *;
 -- name: CountRunningTasks :one
 SELECT count(*) FROM agent_task_queue
 WHERE agent_id = $1 AND status IN ('dispatched', 'running');
+
+-- name: HasActiveTaskForIssue :one
+-- Returns true if there is any queued, dispatched, or running task for the issue.
+SELECT count(*) > 0 AS has_active FROM agent_task_queue
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running');
+
+-- name: HasPendingTaskForIssue :one
+-- Returns true if there is a queued or dispatched (but not yet running) task for the issue.
+-- Used by the coalescing queue: allow enqueue when a task is running (so
+-- the agent picks up new comments on the next cycle) but skip if a pending
+-- task already exists (natural dedup).
+SELECT count(*) > 0 AS has_pending FROM agent_task_queue
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched');
 
 -- name: ListPendingTasksByRuntime :many
 SELECT * FROM agent_task_queue

@@ -47,6 +47,9 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	if opts.SystemPrompt != "" {
 		args = append(args, "--append-system-prompt", opts.SystemPrompt)
 	}
+	if opts.ResumeSessionID != "" {
+		args = append(args, "--resume", opts.ResumeSessionID)
+	}
 	args = append(args, "-p", prompt)
 
 	cmd := exec.CommandContext(runCtx, execPath, args...)

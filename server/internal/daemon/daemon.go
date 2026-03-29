@@ -557,6 +557,14 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 
 	_ = d.client.ReportProgress(ctx, task.ID, "Finishing task", 2, 2)
 
+	// Check if the task was cancelled while it was running (e.g. issue
+	// was reassigned). If so, skip reporting results — the server already
+	// moved the task to 'cancelled' so complete/fail would fail anyway.
+	if status, err := d.client.GetTaskStatus(ctx, task.ID); err == nil && status == "cancelled" {
+		d.logger.Info("task was cancelled during execution, discarding result", "task_id", task.ID)
+		return
+	}
+
 	switch result.Status {
 	case "blocked":
 		if err := d.client.FailTask(ctx, task.ID, result.Comment); err != nil {
@@ -564,7 +572,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 		}
 	default:
 		d.logger.Info("task completed", "task_id", task.ID, "status", result.Status)
-		if err := d.client.CompleteTask(ctx, task.ID, result.Comment, result.BranchName); err != nil {
+		if err := d.client.CompleteTask(ctx, task.ID, result.Comment, result.BranchName, result.SessionID, result.WorkDir); err != nil {
 			d.logger.Error("complete task failed", "task_id", task.ID, "error", err)
 		}
 	}
@@ -578,16 +586,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string) (TaskR
 
 	agentName := "agent"
 	var skills []SkillData
+	var instructions string
 	if task.Agent != nil {
 		agentName = task.Agent.Name
 		skills = task.Agent.Skills
+		instructions = task.Agent.Instructions
 	}
 
 	// Prepare isolated execution environment.
 	taskCtx := execenv.TaskContextForEnv{
-		IssueID:     task.IssueID,
-		AgentName:   agentName,
-		AgentSkills: convertSkillsForEnv(skills),
+		IssueID:           task.IssueID,
+		AgentName:         agentName,
+		AgentInstructions: instructions,
+		AgentSkills:       convertSkillsForEnv(skills),
 	}
 	env, err := execenv.Prepare(execenv.PrepareParams{
 		WorkspacesRoot: d.cfg.WorkspacesRoot,
@@ -632,12 +643,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string) (TaskR
 		return TaskResult{}, fmt.Errorf("create agent backend: %w", err)
 	}
 
-	d.logger.Info("starting agent", "provider", provider, "task_id", task.ID, "workdir", env.WorkDir, "branch", env.BranchName, "env_type", env.Type, "model", entry.Model, "timeout", d.cfg.AgentTimeout.String())
+	d.logger.Info("starting agent", "provider", provider, "task_id", task.ID, "workdir", env.WorkDir, "branch", env.BranchName, "env_type", env.Type, "model", entry.Model, "timeout", d.cfg.AgentTimeout.String(), "resume_session", task.PriorSessionID)
 
 	session, err := backend.Execute(ctx, prompt, agent.ExecOptions{
-		Cwd:     env.WorkDir,
-		Model:   entry.Model,
-		Timeout: d.cfg.AgentTimeout,
+		Cwd:             env.WorkDir,
+		Model:           entry.Model,
+		Timeout:         d.cfg.AgentTimeout,
+		ResumeSessionID: task.PriorSessionID,
 	})
 	if err != nil {
 		return TaskResult{}, err
@@ -667,6 +679,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string) (TaskR
 			Comment:    result.Output,
 			BranchName: env.BranchName,
 			EnvType:    string(env.Type),
+			SessionID:  result.SessionID,
+			WorkDir:    env.WorkDir,
 		}, nil
 	case "timeout":
 		return TaskResult{}, fmt.Errorf("%s timed out after %s", provider, d.cfg.AgentTimeout)

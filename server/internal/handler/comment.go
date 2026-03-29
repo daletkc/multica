@@ -125,6 +125,14 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		"issue_status":        issue.Status,
 	})
 
+	// If the issue is assigned to an agent with on_comment trigger, enqueue a new task.
+	// The agent will resume its prior session and see this comment.
+	if h.shouldEnqueueOnComment(r.Context(), issue) {
+		if _, err := h.TaskService.EnqueueTaskForIssue(r.Context(), issue); err != nil {
+			slog.Warn("enqueue agent task on comment failed", "issue_id", issueID, "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, resp)
 }
 

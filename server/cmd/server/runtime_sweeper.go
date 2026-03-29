@@ -49,6 +49,26 @@ func runRuntimeSweeper(ctx context.Context, queries *db.Queries, bus *events.Bus
 
 			slog.Info("runtime sweeper: marked stale runtimes offline", "count", len(staleRows), "workspaces", len(workspaces))
 
+			// Fail orphaned tasks (dispatched/running) whose runtimes just went offline.
+			failedTasks, err := queries.FailTasksForOfflineRuntimes(ctx)
+			if err != nil {
+				slog.Warn("runtime sweeper: failed to clean up stale tasks", "error", err)
+			} else if len(failedTasks) > 0 {
+				slog.Info("runtime sweeper: failed orphaned tasks", "count", len(failedTasks))
+				for _, ft := range failedTasks {
+					bus.Publish(events.Event{
+						Type:      protocol.EventTaskFailed,
+						ActorType: "system",
+						Payload: map[string]any{
+							"task_id":  util.UUIDToString(ft.ID),
+							"agent_id": util.UUIDToString(ft.AgentID),
+							"issue_id": util.UUIDToString(ft.IssueID),
+							"status":   "failed",
+						},
+					})
+				}
+			}
+
 			// Notify frontend clients so they re-fetch runtime list.
 			for wsID := range workspaces {
 				bus.Publish(events.Event{

@@ -60,6 +60,7 @@ export interface Agent {
   runtime_id: string;
   name: string;
   description: string;
+  instructions: string;
   avatar_url: string | null;
   runtime_mode: AgentRuntimeMode;
   runtime_config: Record<string, unknown>;
@@ -77,6 +78,7 @@ export interface Agent {
 export interface CreateAgentRequest {
   name: string;
   description?: string;
+  instructions?: string;
   avatar_url?: string;
   runtime_id: string;
   runtime_config?: Record<string, unknown>;
@@ -89,6 +91,7 @@ export interface CreateAgentRequest {
 export interface UpdateAgentRequest {
   name?: string;
   description?: string;
+  instructions?: string;
   avatar_url?: string;
   runtime_id?: string;
   runtime_config?: Record<string, unknown>;

@@ -36,6 +36,7 @@ type Agent struct {
 	Tools              []byte             `json:"tools"`
 	Triggers           []byte             `json:"triggers"`
 	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	Instructions       string             `json:"instructions"`
 }
 
 type AgentRuntime struct {
@@ -73,6 +74,8 @@ type AgentTaskQueue struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	Context      []byte             `json:"context"`
 	RuntimeID    pgtype.UUID        `json:"runtime_id"`
+	SessionID    pgtype.Text        `json:"session_id"`
+	WorkDir      pgtype.Text        `json:"work_dir"`
 }
 
 type Comment struct {

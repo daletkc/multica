@@ -94,6 +94,7 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 		r.Post("/runtimes/{runtimeId}/usage", h.ReportRuntimeUsage)
 		r.Post("/runtimes/{runtimeId}/ping/{pingId}/result", h.ReportPingResult)
 
+		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
 		r.Post("/tasks/{taskId}/progress", h.ReportTaskProgress)
 		r.Post("/tasks/{taskId}/complete", h.CompleteTask)

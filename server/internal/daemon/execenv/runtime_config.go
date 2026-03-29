@@ -34,6 +34,13 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("# Multica Agent Runtime\n\n")
 	b.WriteString("You are a coding agent in the Multica platform. Use the `multica` CLI to interact with the platform.\n\n")
 
+	// Inject agent identity instructions before workflow commands.
+	if ctx.AgentInstructions != "" {
+		b.WriteString("## Agent Identity\n\n")
+		b.WriteString(ctx.AgentInstructions)
+		b.WriteString("\n\n")
+	}
+
 	b.WriteString("## Available Commands\n\n")
 	b.WriteString("### Read\n")
 	b.WriteString("- `multica issue get <id>` — Get full issue details (title, description, status, priority, assignee)\n")

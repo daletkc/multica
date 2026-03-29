@@ -20,11 +20,12 @@ type Backend interface {
 
 // ExecOptions configures a single execution.
 type ExecOptions struct {
-	Cwd          string
-	Model        string
-	SystemPrompt string
-	MaxTurns     int
-	Timeout      time.Duration
+	Cwd             string
+	Model           string
+	SystemPrompt    string
+	MaxTurns        int
+	Timeout         time.Duration
+	ResumeSessionID string // if non-empty, resume a previous Claude Code session
 }
 
 // Session represents a running agent execution.

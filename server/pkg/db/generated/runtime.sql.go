@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const failTasksForOfflineRuntimes = `-- name: FailTasksForOfflineRuntimes :many
+UPDATE agent_task_queue
+SET status = 'failed', completed_at = now(), error = 'runtime went offline'
+WHERE status IN ('dispatched', 'running')
+  AND runtime_id IN (
+    SELECT id FROM agent_runtime WHERE status = 'offline'
+  )
+RETURNING id, agent_id, issue_id
+`
+
+type FailTasksForOfflineRuntimesRow struct {
+	ID      pgtype.UUID `json:"id"`
+	AgentID pgtype.UUID `json:"agent_id"`
+	IssueID pgtype.UUID `json:"issue_id"`
+}
+
+// Marks dispatched/running tasks as failed when their runtime is offline.
+// This cleans up orphaned tasks after a daemon crash or network partition.
+func (q *Queries) FailTasksForOfflineRuntimes(ctx context.Context) ([]FailTasksForOfflineRuntimesRow, error) {
+	rows, err := q.db.Query(ctx, failTasksForOfflineRuntimes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FailTasksForOfflineRuntimesRow{}
+	for rows.Next() {
+		var i FailTasksForOfflineRuntimesRow
+		if err := rows.Scan(&i.ID, &i.AgentID, &i.IssueID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAgentRuntime = `-- name: GetAgentRuntime :one
 SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at FROM agent_runtime
 WHERE id = $1
