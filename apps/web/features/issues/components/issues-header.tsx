@@ -162,7 +162,7 @@ function ActorSubContent({
     m.name.toLowerCase().includes(query),
   );
   const filteredAgents = agents.filter((a) =>
-    a.name.toLowerCase().includes(query),
+    !a.archived_at && a.name.toLowerCase().includes(query),
   );
 
   const isSelected = (type: "member" | "agent", id: string) =>

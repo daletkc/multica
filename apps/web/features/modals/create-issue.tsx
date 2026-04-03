@@ -99,7 +99,7 @@ export function CreateIssueModal({ onClose, data }: { onClose: () => void; data?
 
   const assigneeQuery = assigneeFilter.toLowerCase();
   const filteredMembers = members.filter((m) => m.name.toLowerCase().includes(assigneeQuery));
-  const filteredAgents = agents.filter((a) => a.name.toLowerCase().includes(assigneeQuery));
+  const filteredAgents = agents.filter((a) => !a.archived_at && a.name.toLowerCase().includes(assigneeQuery));
 
   const assigneeLabel =
     assigneeType && assigneeId
