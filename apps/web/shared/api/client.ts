@@ -196,6 +196,10 @@ export class ApiClient {
     });
   }
 
+  async listChildIssues(id: string): Promise<{ issues: Issue[] }> {
+    return this.fetch(`/api/issues/${id}/children`);
+  }
+
   async deleteIssue(id: string): Promise<void> {
     await this.fetch(`/api/issues/${id}`, { method: "DELETE" });
   }

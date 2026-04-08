@@ -12,6 +12,22 @@ import type {
 import type { TimelineEntry, IssueSubscriber, Reaction } from "@/shared/types";
 
 // ---------------------------------------------------------------------------
+// Shared mutation variable types — used by both mutation hooks and
+// useMutationState consumers to keep the type assertion in sync.
+// ---------------------------------------------------------------------------
+
+export type ToggleCommentReactionVars = {
+  commentId: string;
+  emoji: string;
+  existing: Reaction | undefined;
+};
+
+export type ToggleIssueReactionVars = {
+  emoji: string;
+  existing: IssueReaction | undefined;
+};
+
+// ---------------------------------------------------------------------------
 // Done issue pagination
 // ---------------------------------------------------------------------------
 
@@ -74,6 +90,10 @@ export function useCreateIssue() {
             }
           : old,
       );
+      // Invalidate parent's children query so sub-issues list updates immediately
+      if (newIssue.parent_issue_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.children(wsId, newIssue.parent_issue_id) });
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
@@ -334,87 +354,17 @@ export function useDeleteComment(issueId: string) {
 export function useToggleCommentReaction(issueId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: ["toggleCommentReaction", issueId] as const,
     mutationFn: async ({
       commentId,
       emoji,
       existing,
-    }: {
-      commentId: string;
-      emoji: string;
-      existing: Reaction | undefined;
-    }) => {
+    }: ToggleCommentReactionVars) => {
       if (existing) {
         await api.removeReaction(commentId, emoji);
         return null;
       }
       return api.addReaction(commentId, emoji);
-    },
-    onMutate: async ({ commentId, emoji, existing }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
-      const prev = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId));
-
-      if (existing) {
-        // Remove
-        qc.setQueryData<TimelineEntry[]>(
-          issueKeys.timeline(issueId),
-          (old) =>
-            old?.map((e) =>
-              e.id === commentId
-                ? {
-                    ...e,
-                    reactions: (e.reactions ?? []).filter(
-                      (r) => r.id !== existing.id,
-                    ),
-                  }
-                : e,
-            ),
-        );
-      } else {
-        // Add temp
-        const tempReaction: Reaction = {
-          id: `temp-${Date.now()}`,
-          comment_id: commentId,
-          actor_type: "",
-          actor_id: "",
-          emoji,
-          created_at: new Date().toISOString(),
-        };
-        qc.setQueryData<TimelineEntry[]>(
-          issueKeys.timeline(issueId),
-          (old) =>
-            old?.map((e) =>
-              e.id === commentId
-                ? { ...e, reactions: [...(e.reactions ?? []), tempReaction] }
-                : e,
-            ),
-        );
-      }
-      return { prev };
-    },
-    onSuccess: (reaction, { commentId }) => {
-      if (reaction) {
-        // Replace temp with real
-        qc.setQueryData<TimelineEntry[]>(
-          issueKeys.timeline(issueId),
-          (old) =>
-            old?.map((e) =>
-              e.id === commentId
-                ? {
-                    ...e,
-                    reactions: (e.reactions ?? []).map((r) =>
-                      r.id.startsWith("temp-") && r.emoji === reaction.emoji
-                        ? reaction
-                        : r,
-                    ),
-                  }
-                : e,
-            ),
-        );
-      }
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev)
-        qc.setQueryData(issueKeys.timeline(issueId), ctx.prev);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
@@ -429,60 +379,16 @@ export function useToggleCommentReaction(issueId: string) {
 export function useToggleIssueReaction(issueId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: ["toggleIssueReaction", issueId] as const,
     mutationFn: async ({
       emoji,
       existing,
-    }: {
-      emoji: string;
-      existing: IssueReaction | undefined;
-    }) => {
+    }: ToggleIssueReactionVars) => {
       if (existing) {
         await api.removeIssueReaction(issueId, emoji);
         return null;
       }
       return api.addIssueReaction(issueId, emoji);
-    },
-    onMutate: async ({ emoji, existing }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.reactions(issueId) });
-      const prev = qc.getQueryData<IssueReaction[]>(issueKeys.reactions(issueId));
-
-      if (existing) {
-        qc.setQueryData<IssueReaction[]>(
-          issueKeys.reactions(issueId),
-          (old) => old?.filter((r) => r.id !== existing.id),
-        );
-      } else {
-        const temp: IssueReaction = {
-          id: `temp-${Date.now()}`,
-          issue_id: issueId,
-          actor_type: "",
-          actor_id: "",
-          emoji,
-          created_at: new Date().toISOString(),
-        };
-        qc.setQueryData<IssueReaction[]>(
-          issueKeys.reactions(issueId),
-          (old) => [...(old ?? []), temp],
-        );
-      }
-      return { prev };
-    },
-    onSuccess: (reaction) => {
-      if (reaction) {
-        qc.setQueryData<IssueReaction[]>(
-          issueKeys.reactions(issueId),
-          (old) =>
-            old?.map((r) =>
-              r.id.startsWith("temp-") && r.emoji === reaction.emoji
-                ? reaction
-                : r,
-            ),
-        );
-      }
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev)
-        qc.setQueryData(issueKeys.reactions(issueId), ctx.prev);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: issueKeys.reactions(issueId) });

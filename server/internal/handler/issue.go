@@ -190,6 +190,27 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	issue, ok := h.loadIssueForUser(w, r, id)
+	if !ok {
+		return
+	}
+	children, err := h.Queries.ListChildIssues(r.Context(), issue.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list child issues")
+		return
+	}
+	prefix := h.getIssuePrefix(r.Context(), issue.WorkspaceID)
+	resp := make([]IssueResponse, len(children))
+	for i, child := range children {
+		resp[i] = issueToResponse(child, prefix)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"issues": resp,
+	})
+}
+
 type CreateIssueRequest struct {
 	Title              string   `json:"title"`
 	Description        *string  `json:"description"`
@@ -251,6 +272,15 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	var parentIssueID pgtype.UUID
 	if req.ParentIssueID != nil {
 		parentIssueID = parseUUID(*req.ParentIssueID)
+		// Validate parent exists in the same workspace.
+		parent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+			ID:          parentIssueID,
+			WorkspaceID: parseUUID(workspaceID),
+		})
+		if err != nil || !parent.ID.Valid {
+			writeError(w, http.StatusBadRequest, "parent issue not found in this workspace")
+			return
+		}
 	}
 
 	var dueDate pgtype.Timestamptz
@@ -353,6 +383,7 @@ type UpdateIssueRequest struct {
 	AssigneeID         *string  `json:"assignee_id"`
 	Position           *float64 `json:"position"`
 	DueDate            *string  `json:"due_date"`
+	ParentIssueID      *string  `json:"parent_issue_id"`
 }
 
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
@@ -383,10 +414,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Pre-fill nullable fields (bare sqlc.narg) with current values
 	params := db.UpdateIssueParams{
-		ID:           prevIssue.ID,
-		AssigneeType: prevIssue.AssigneeType,
-		AssigneeID:   prevIssue.AssigneeID,
-		DueDate:      prevIssue.DueDate,
+		ID:            prevIssue.ID,
+		AssigneeType:  prevIssue.AssigneeType,
+		AssigneeID:    prevIssue.AssigneeID,
+		DueDate:       prevIssue.DueDate,
+		ParentIssueID: prevIssue.ParentIssueID,
 	}
 
 	// COALESCE fields — only set when explicitly provided
@@ -430,6 +462,40 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			params.DueDate = pgtype.Timestamptz{Time: t, Valid: true}
 		} else {
 			params.DueDate = pgtype.Timestamptz{Valid: false} // explicit null = clear date
+		}
+	}
+	if _, ok := rawFields["parent_issue_id"]; ok {
+		if req.ParentIssueID != nil {
+			newParentID := parseUUID(*req.ParentIssueID)
+			// Cannot set self as parent.
+			if uuidToString(newParentID) == id {
+				writeError(w, http.StatusBadRequest, "an issue cannot be its own parent")
+				return
+			}
+			// Validate parent exists in the same workspace.
+			if _, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+				ID:          newParentID,
+				WorkspaceID: prevIssue.WorkspaceID,
+			}); err != nil {
+				writeError(w, http.StatusBadRequest, "parent issue not found in this workspace")
+				return
+			}
+			// Cycle detection: walk up from the new parent to ensure we don't reach this issue.
+			cursor := newParentID
+			for depth := 0; depth < 10; depth++ {
+				ancestor, err := h.Queries.GetIssue(r.Context(), cursor)
+				if err != nil || !ancestor.ParentIssueID.Valid {
+					break
+				}
+				if uuidToString(ancestor.ParentIssueID) == id {
+					writeError(w, http.StatusBadRequest, "circular parent relationship detected")
+					return
+				}
+				cursor = ancestor.ParentIssueID
+			}
+			params.ParentIssueID = newParentID
+		} else {
+			params.ParentIssueID = pgtype.UUID{Valid: false} // explicit null = remove parent
 		}
 	}
 
@@ -654,10 +720,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		}
 
 		params := db.UpdateIssueParams{
-			ID:           prevIssue.ID,
-			AssigneeType: prevIssue.AssigneeType,
-			AssigneeID:   prevIssue.AssigneeID,
-			DueDate:      prevIssue.DueDate,
+			ID:            prevIssue.ID,
+			AssigneeType:  prevIssue.AssigneeType,
+			AssigneeID:    prevIssue.AssigneeID,
+			DueDate:       prevIssue.DueDate,
+			ParentIssueID: prevIssue.ParentIssueID,
 		}
 
 		if req.Updates.Title != nil {

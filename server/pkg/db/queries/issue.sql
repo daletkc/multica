@@ -38,6 +38,7 @@ UPDATE issue SET
     assignee_id = sqlc.narg('assignee_id'),
     position = COALESCE(sqlc.narg('position'), position),
     due_date = sqlc.narg('due_date'),
+    parent_issue_id = sqlc.narg('parent_issue_id'),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -66,3 +67,8 @@ WHERE workspace_id = $1
   AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
   AND (sqlc.narg('priority')::text IS NULL OR priority = sqlc.narg('priority'))
   AND (sqlc.narg('assignee_id')::uuid IS NULL OR assignee_id = sqlc.narg('assignee_id'));
+
+-- name: ListChildIssues :many
+SELECT * FROM issue
+WHERE parent_issue_id = $1
+ORDER BY position ASC, created_at DESC;

@@ -142,6 +142,7 @@ export function CreateIssueModal({ onClose, data }: { onClose: () => void; data?
         assignee_id: assigneeId,
         due_date: dueDate || undefined,
         attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
+        parent_issue_id: (data?.parent_issue_id as string) || undefined,
       });
       clearDraft();
       onClose();
@@ -196,7 +197,13 @@ export function CreateIssueModal({ onClose, data }: { onClose: () => void; data?
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">{workspaceName}</span>
             <ChevronRight className="size-3 text-muted-foreground/50" />
-            <span className="font-medium">New issue</span>
+            {typeof data?.parent_issue_identifier === "string" && (
+              <>
+                <span className="text-muted-foreground">{data.parent_issue_identifier}</span>
+                <ChevronRight className="size-3 text-muted-foreground/50" />
+              </>
+            )}
+            <span className="font-medium">{data?.parent_issue_id ? "New sub-issue" : "New issue"}</span>
           </div>
           <div className="flex items-center gap-1">
             <Tooltip>

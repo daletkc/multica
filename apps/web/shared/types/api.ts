@@ -23,6 +23,7 @@ export interface UpdateIssueRequest {
   assignee_id?: string | null;
   position?: number;
   due_date?: string | null;
+  parent_issue_id?: string | null;
 }
 
 export interface ListIssuesParams {

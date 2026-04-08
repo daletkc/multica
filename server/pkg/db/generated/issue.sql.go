@@ -216,6 +216,51 @@ func (q *Queries) GetIssueInWorkspace(ctx context.Context, arg GetIssueInWorkspa
 	return i, err
 }
 
+const listChildIssues = `-- name: ListChildIssues :many
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number FROM issue
+WHERE parent_issue_id = $1
+ORDER BY position ASC, created_at DESC
+`
+
+func (q *Queries) ListChildIssues(ctx context.Context, parentIssueID pgtype.UUID) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listChildIssues, parentIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIssues = `-- name: ListIssues :many
 SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number FROM issue
 WHERE workspace_id = $1
@@ -345,21 +390,23 @@ UPDATE issue SET
     assignee_id = $7,
     position = COALESCE($8, position),
     due_date = $9,
+    parent_issue_id = $10,
     updated_at = now()
 WHERE id = $1
 RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number
 `
 
 type UpdateIssueParams struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        pgtype.Text        `json:"title"`
-	Description  pgtype.Text        `json:"description"`
-	Status       pgtype.Text        `json:"status"`
-	Priority     pgtype.Text        `json:"priority"`
-	AssigneeType pgtype.Text        `json:"assignee_type"`
-	AssigneeID   pgtype.UUID        `json:"assignee_id"`
-	Position     pgtype.Float8      `json:"position"`
-	DueDate      pgtype.Timestamptz `json:"due_date"`
+	ID            pgtype.UUID        `json:"id"`
+	Title         pgtype.Text        `json:"title"`
+	Description   pgtype.Text        `json:"description"`
+	Status        pgtype.Text        `json:"status"`
+	Priority      pgtype.Text        `json:"priority"`
+	AssigneeType  pgtype.Text        `json:"assignee_type"`
+	AssigneeID    pgtype.UUID        `json:"assignee_id"`
+	Position      pgtype.Float8      `json:"position"`
+	DueDate       pgtype.Timestamptz `json:"due_date"`
+	ParentIssueID pgtype.UUID        `json:"parent_issue_id"`
 }
 
 func (q *Queries) UpdateIssue(ctx context.Context, arg UpdateIssueParams) (Issue, error) {
@@ -373,6 +420,7 @@ func (q *Queries) UpdateIssue(ctx context.Context, arg UpdateIssueParams) (Issue
 		arg.AssigneeID,
 		arg.Position,
 		arg.DueDate,
+		arg.ParentIssueID,
 	)
 	var i Issue
 	err := row.Scan(

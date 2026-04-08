@@ -1,19 +1,19 @@
 "use client";
 
-import { useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import { useQuery, useQueryClient, useMutationState } from "@tanstack/react-query";
 import type { IssueReaction } from "@/shared/types";
 import type {
   IssueReactionAddedPayload,
   IssueReactionRemovedPayload,
 } from "@/shared/types";
 import { issueReactionsOptions, issueKeys } from "@core/issues/queries";
-import { useToggleIssueReaction } from "@core/issues/mutations";
+import { useToggleIssueReaction, type ToggleIssueReactionVars } from "@core/issues/mutations";
 import { useWSEvent, useWSReconnect } from "@/features/realtime";
 
 export function useIssueReactions(issueId: string, userId?: string) {
   const qc = useQueryClient();
-  const { data: reactions = [], isLoading: loading } = useQuery(
+  const { data: serverReactions = [], isLoading: loading } = useQuery(
     issueReactionsOptions(issueId),
   );
 
@@ -26,7 +26,7 @@ export function useIssueReactions(issueId: string, userId?: string) {
     }, [qc, issueId]),
   );
 
-  // --- WS event handlers ---
+  // --- WS event handlers (update server cache for other users' actions) ---
 
   useWSEvent(
     "issue_reaction:added",
@@ -70,12 +70,60 @@ export function useIssueReactions(issueId: string, userId?: string) {
     ),
   );
 
+  // --- Optimistic UI derivation ---
+  // Instead of writing temp data into the cache (which races with WS events),
+  // derive optimistic state at render time from pending mutation variables.
+
+  const pendingVars = useMutationState({
+    filters: {
+      mutationKey: ["toggleIssueReaction", issueId],
+      status: "pending",
+    },
+    select: (m) =>
+      m.state.variables as ToggleIssueReactionVars | undefined,
+  });
+
+  const reactions = useMemo(() => {
+    if (pendingVars.length === 0) return serverReactions;
+
+    let result = [...serverReactions];
+    for (const vars of pendingVars) {
+      if (!vars) continue;
+      if (vars.existing) {
+        // Pending removal
+        result = result.filter((r) => r.id !== vars.existing!.id);
+      } else {
+        // Pending add — skip if server already has it (WS arrived first)
+        const alreadyExists = result.some(
+          (r) =>
+            r.emoji === vars.emoji &&
+            r.actor_type === "member" &&
+            r.actor_id === userId,
+        );
+        if (!alreadyExists) {
+          result = [
+            ...result,
+            {
+              id: `optimistic-${vars.emoji}`,
+              issue_id: issueId,
+              actor_type: "member",
+              actor_id: userId ?? "",
+              emoji: vars.emoji,
+              created_at: "",
+            },
+          ];
+        }
+      }
+    }
+    return result;
+  }, [serverReactions, pendingVars, issueId, userId]);
+
   // --- Mutation ---
 
   const toggleReaction = useCallback(
     async (emoji: string) => {
       if (!userId) return;
-      const existing = reactions.find(
+      const existing = serverReactions.find(
         (r) =>
           r.emoji === emoji &&
           r.actor_type === "member" &&
@@ -83,7 +131,7 @@ export function useIssueReactions(issueId: string, userId?: string) {
       );
       toggleMutation.mutate({ emoji, existing });
     },
-    [userId, reactions, toggleMutation],
+    [userId, serverReactions, toggleMutation],
   );
 
   return { reactions, loading, toggleReaction };

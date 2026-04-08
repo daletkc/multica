@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient, useMutationState } from "@tanstack/react-query";
 import type { Comment, TimelineEntry, Reaction } from "@/shared/types";
 import type {
   CommentCreatedPayload,
@@ -17,6 +17,7 @@ import {
   useUpdateComment,
   useDeleteComment,
   useToggleCommentReaction,
+  type ToggleCommentReactionVars,
 } from "@core/issues/mutations";
 import { useWSEvent, useWSReconnect } from "@/features/realtime";
 import { toast } from "sonner";
@@ -259,9 +260,65 @@ export function useIssueTimeline(issueId: string, userId?: string) {
     [deleteCommentMutation],
   );
 
+  // --- Optimistic UI derivation for comment reactions ---
+  // Instead of writing temp data into the cache (which races with WS events),
+  // derive optimistic state at render time from pending mutation variables.
+
+  const pendingReactionVars = useMutationState({
+    filters: {
+      mutationKey: ["toggleCommentReaction", issueId],
+      status: "pending",
+    },
+    select: (m) =>
+      m.state.variables as ToggleCommentReactionVars | undefined,
+  });
+
+  const optimisticTimeline = useMemo(() => {
+    if (pendingReactionVars.length === 0) return timeline;
+
+    return timeline.map((entry) => {
+      const pendingForEntry = pendingReactionVars.filter(
+        (v) => v && v.commentId === entry.id,
+      );
+      if (pendingForEntry.length === 0) return entry;
+
+      let reactions = entry.reactions ?? [];
+      for (const vars of pendingForEntry) {
+        if (!vars) continue;
+        if (vars.existing) {
+          // Pending removal
+          reactions = reactions.filter((r) => r.id !== vars.existing!.id);
+        } else {
+          // Pending add — skip if server already has it (WS arrived first)
+          const alreadyExists = reactions.some(
+            (r) =>
+              r.emoji === vars.emoji &&
+              r.actor_type === "member" &&
+              r.actor_id === userId,
+          );
+          if (!alreadyExists) {
+            reactions = [
+              ...reactions,
+              {
+                id: `optimistic-${vars.emoji}`,
+                comment_id: vars.commentId,
+                actor_type: "member",
+                actor_id: userId ?? "",
+                emoji: vars.emoji,
+                created_at: "",
+              },
+            ];
+          }
+        }
+      }
+      return { ...entry, reactions };
+    });
+  }, [timeline, pendingReactionVars, userId]);
+
   const toggleReaction = useCallback(
     async (commentId: string, emoji: string) => {
       if (!userId) return;
+      // Read from server timeline (not optimistic) to find the real reaction
       const entry = timeline.find((e) => e.id === commentId);
       const existing: Reaction | undefined = (entry?.reactions ?? []).find(
         (r) =>
@@ -275,7 +332,7 @@ export function useIssueTimeline(issueId: string, userId?: string) {
   );
 
   return {
-    timeline,
+    timeline: optimisticTimeline,
     loading,
     submitting,
     submitComment,

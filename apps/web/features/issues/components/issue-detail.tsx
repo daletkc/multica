@@ -13,6 +13,7 @@ import {
   Link2,
   MoreHorizontal,
   PanelRight,
+  Plus,
   Trash2,
   UserMinus,
   Users,
@@ -57,7 +58,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { AvatarGroup, AvatarGroupCount } from "@/components/ui/avatar";
 import { ActorAvatar } from "@/components/common/actor-avatar";
-import type { UpdateIssueRequest, IssueStatus, IssuePriority, TimelineEntry } from "@/shared/types";
+import type { Issue, UpdateIssueRequest, IssueStatus, IssuePriority, TimelineEntry } from "@/shared/types";
 import { ALL_STATUSES, STATUS_CONFIG, PRIORITY_ORDER, PRIORITY_CONFIG } from "@/features/issues/config";
 import { StatusIcon, PriorityIcon, DueDatePicker, AssigneePicker, canAssignAgent } from "@/features/issues/components";
 import { CommentCard } from "./comment-card";
@@ -67,7 +68,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import { useWorkspaceStore, useActorName } from "@/features/workspace";
 import { useWorkspaceId } from "@core/hooks";
-import { issueListOptions, issueDetailOptions } from "@core/issues/queries";
+import { issueListOptions, issueDetailOptions, childIssuesOptions } from "@core/issues/queries";
 import { memberListOptions, agentListOptions } from "@core/workspace/queries";
 import { useUpdateIssue, useDeleteIssue } from "@core/issues/mutations";
 import { useIssueTimeline } from "@/features/issues/hooks/use-issue-timeline";
@@ -75,6 +76,7 @@ import { useIssueReactions } from "@/features/issues/hooks/use-issue-reactions";
 import { useIssueSubscribers } from "@/features/issues/hooks/use-issue-subscribers";
 import { ReactionBar } from "@/components/common/reaction-bar";
 import { useFileUpload } from "@/shared/hooks/use-file-upload";
+import { useModalStore } from "@/features/modals";
 import { timeAgo } from "@/shared/utils";
 
 function shortDate(date: string | null): string {
@@ -225,6 +227,18 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
     subscribers, loading: subscribersLoading, isSubscribed, toggleSubscribe: handleToggleSubscribe, toggleSubscriber,
   } = useIssueSubscribers(id, user?.id);
 
+  // Sub-issue queries
+  const parentIssueId = issue?.parent_issue_id;
+  const { data: parentIssue = null } = useQuery({
+    ...issueDetailOptions(wsId, parentIssueId ?? ""),
+    enabled: !!parentIssueId,
+    initialData: () => allIssues.find((i) => i.id === parentIssueId),
+  });
+  const { data: childIssues = [] } = useQuery({
+    ...childIssuesOptions(wsId, id),
+    enabled: !!issue,
+  });
+
   const loading = issueLoading;
 
   // Scroll to highlighted comment once timeline loads (fire only once per highlightCommentId)
@@ -373,6 +387,17 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
                   className="text-muted-foreground hover:text-foreground transition-colors truncate shrink-0"
                 >
                   {workspace.name}
+                </Link>
+                <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+              </>
+            )}
+            {parentIssue && (
+              <>
+                <Link
+                  href={`/issues/${parentIssue.id}`}
+                  className="text-muted-foreground hover:text-foreground transition-colors truncate shrink-0"
+                >
+                  {parentIssue.identifier}
                 </Link>
                 <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
               </>
@@ -547,6 +572,17 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
 
                 <DropdownMenuSeparator />
 
+                {/* Create sub-issue */}
+                <DropdownMenuItem onClick={() => {
+                  useModalStore.getState().open("create-issue", {
+                    parent_issue_id: issue.id,
+                    parent_issue_identifier: issue.identifier,
+                  });
+                }}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Create sub-issue
+                </DropdownMenuItem>
+
                 {/* Copy link */}
                 <DropdownMenuItem onClick={() => {
                   navigator.clipboard.writeText(window.location.href);
@@ -656,6 +692,43 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
               onSelect={(file) => descEditorRef.current?.uploadFile(file)}
             />
           </div>
+
+          {/* Sub-issues — below description, like Linear */}
+          {(childIssues.length > 0 || parentIssue) && (
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-medium">Sub-issues</span>
+                {childIssues.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{childIssues.length}/{childIssues.length}</span>
+                )}
+                <button
+                  type="button"
+                  className="ml-auto p-1 rounded hover:bg-accent/60 transition-colors text-muted-foreground hover:text-foreground"
+                  onClick={() => useModalStore.getState().open("create-issue", {
+                    parent_issue_id: issue.id,
+                    parent_issue_identifier: issue.identifier,
+                  })}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {childIssues.map((child) => (
+                  <Link
+                    key={child.id}
+                    href={`/issues/${child.id}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-accent/50 transition-colors group"
+                  >
+                    <StatusIcon status={child.status} className="h-4 w-4 shrink-0" />
+                    <span className="truncate group-hover:text-foreground">{child.title}</span>
+                    {child.assignee_type && child.assignee_id && (
+                      <ActorAvatar actorType={child.assignee_type} actorId={child.assignee_id} size={20} className="ml-auto shrink-0" />
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="my-8 border-t" />
 
@@ -1004,6 +1077,26 @@ export function IssueDetail({ issueId, onDelete, defaultSidebarOpen = true, layo
               </PropRow>
             </div>}
           </div>
+
+          {/* Parent issue */}
+          {parentIssue && (
+            <div>
+              <div className="text-xs font-medium mb-2 flex items-center gap-1">
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rotate-90" />
+                Parent issue
+              </div>
+              <div className="pl-2">
+                <Link
+                  href={`/issues/${parentIssue.id}`}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 -mx-2 text-xs hover:bg-accent/50 transition-colors group"
+                >
+                  <StatusIcon status={parentIssue.status} className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-muted-foreground shrink-0">{parentIssue.identifier}</span>
+                  <span className="truncate group-hover:text-foreground">{parentIssue.title}</span>
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* Details section */}
           <div>
