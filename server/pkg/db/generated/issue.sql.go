@@ -11,6 +11,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countIssues = `-- name: CountIssues :one
+SELECT count(*) FROM issue
+WHERE workspace_id = $1
+  AND ($2::text IS NULL OR status = $2)
+  AND ($3::text IS NULL OR priority = $3)
+  AND ($4::uuid IS NULL OR assignee_id = $4)
+`
+
+type CountIssuesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Status      pgtype.Text `json:"status"`
+	Priority    pgtype.Text `json:"priority"`
+	AssigneeID  pgtype.UUID `json:"assignee_id"`
+}
+
+func (q *Queries) CountIssues(ctx context.Context, arg CountIssuesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIssues,
+		arg.WorkspaceID,
+		arg.Status,
+		arg.Priority,
+		arg.AssigneeID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createIssue = `-- name: CreateIssue :one
 INSERT INTO issue (
     workspace_id, title, description, status, priority,

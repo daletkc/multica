@@ -7,6 +7,13 @@ WHERE workspace_id = $1
 ORDER BY position ASC, created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: CountIssues :one
+SELECT count(*) FROM issue
+WHERE workspace_id = $1
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
+  AND (sqlc.narg('priority')::text IS NULL OR priority = sqlc.narg('priority'))
+  AND (sqlc.narg('assignee_id')::uuid IS NULL OR assignee_id = sqlc.narg('assignee_id'));
+
 -- name: GetIssue :one
 SELECT * FROM issue
 WHERE id = $1;

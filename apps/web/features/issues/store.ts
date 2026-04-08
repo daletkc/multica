@@ -30,9 +30,20 @@ export const useIssueStore = create<IssueState>((set, get) => ({
     const isInitialLoad = get().issues.length === 0;
     if (isInitialLoad) set({ loading: true });
     try {
-      const res = await api.listIssues({ limit: 200 });
-      logger.info("fetched", res.issues.length, "issues");
-      set({ issues: res.issues, loading: false });
+      const pageSize = 200;
+      let offset = 0;
+      let allIssues: Issue[] = [];
+      let total = 0;
+      // Fetch all pages
+      for (;;) {
+        const res = await api.listIssues({ limit: pageSize, offset });
+        allIssues = allIssues.concat(res.issues);
+        total = res.total;
+        if (allIssues.length >= total || res.issues.length < pageSize) break;
+        offset += pageSize;
+      }
+      logger.info("fetched", allIssues.length, "of", total, "issues");
+      set({ issues: allIssues, loading: false });
     } catch (err) {
       logger.error("fetch failed", err);
       toast.error("Failed to load issues");

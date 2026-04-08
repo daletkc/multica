@@ -122,9 +122,7 @@ export function MyIssuesPage() {
 
       api.updateIssue(issueId, updates).catch(() => {
         toast.error("Failed to move issue");
-        api.listIssues({ limit: 200 }).then((res) => {
-          useIssueStore.getState().setIssues(res.issues);
-        }).catch(console.error);
+        useIssueStore.getState().fetch().catch(console.error);
       });
     },
     [],

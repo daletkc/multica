@@ -111,8 +111,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		assigneeFilter = parseUUID(a)
 	}
 
+	wsUUID := parseUUID(workspaceID)
+
 	issues, err := h.Queries.ListIssues(ctx, db.ListIssuesParams{
-		WorkspaceID: parseUUID(workspaceID),
+		WorkspaceID: wsUUID,
 		Limit:       int32(limit),
 		Offset:      int32(offset),
 		Status:      statusFilter,
@@ -124,7 +126,18 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefix := h.getIssuePrefix(ctx, parseUUID(workspaceID))
+	total, err := h.Queries.CountIssues(ctx, db.CountIssuesParams{
+		WorkspaceID: wsUUID,
+		Status:      statusFilter,
+		Priority:    priorityFilter,
+		AssigneeID:  assigneeFilter,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count issues")
+		return
+	}
+
+	prefix := h.getIssuePrefix(ctx, wsUUID)
 	resp := make([]IssueResponse, len(issues))
 	for i, issue := range issues {
 		resp[i] = issueToResponse(issue, prefix)
@@ -132,7 +145,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issues": resp,
-		"total":  len(resp),
+		"total":  total,
 	})
 }
 
