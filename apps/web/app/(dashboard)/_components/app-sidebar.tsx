@@ -18,14 +18,17 @@ import {
   CircleUser,
   FolderKanban,
   Search,
+  Ellipsis,
 } from "lucide-react";
 import { WorkspaceAvatar } from "@multica/views/workspace/workspace-avatar";
+import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
 import { useIssueDraftStore } from "@multica/core/issues/stores/draft-store";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarFooter,
   SidebarMenu,
@@ -52,15 +55,18 @@ import { useModalStore } from "@multica/core/modals";
 import { useMyRuntimesNeedUpdate } from "@multica/core/runtimes/hooks";
 import { useSearchStore } from "@/features/search";
 
-const primaryNav = [
+const personalNav = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/my-issues", label: "My Issues", icon: CircleUser },
-  { href: "/issues", label: "Issues", icon: ListTodo },
-  { href: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
 const workspaceNav = [
+  { href: "/issues", label: "Issues", icon: ListTodo },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/agents", label: "Agents", icon: Bot },
+];
+
+const configureNav = [
   { href: "/runtimes", label: "Runtimes", icon: Monitor },
   { href: "/skills", label: "Skills", icon: BookOpenText },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -103,21 +109,20 @@ export function AppSidebar() {
       <Sidebar variant="inset">
         {/* Workspace Switcher */}
         <SidebarHeader className="py-3">
-          <div className="flex items-center gap-4">
-            <SidebarMenu className="min-w-0 flex-1">
-              <SidebarMenuItem>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <SidebarMenuButton>
-                        <WorkspaceAvatar name={workspace?.name ?? "M"} size="sm" />
-                        <span className="flex-1 truncate font-medium">
-                          {workspace?.name ?? "Multica"}
-                        </span>
-                        <ChevronDown className="size-3 text-muted-foreground" />
-                      </SidebarMenuButton>
-                    }
-                  />
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <SidebarMenuButton>
+                      <WorkspaceAvatar name={workspace?.name ?? "M"} size="sm" />
+                      <span className="flex-1 truncate font-medium">
+                        {workspace?.name ?? "Multica"}
+                      </span>
+                      <ChevronDown className="size-3 text-muted-foreground" />
+                    </SidebarMenuButton>
+                  }
+                />
                 <DropdownMenuContent
                   className="w-52"
                   align="start"
@@ -171,31 +176,35 @@ export function AppSidebar() {
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
-                </DropdownMenu>
-              </SidebarMenuItem>
-            </SidebarMenu>
-            <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  onClick={() => useSearchStore.getState().setOpen(true)}
-                >
-                  <Search className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Search workspace (⌘K)</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-background text-foreground shadow-sm hover:bg-accent"
-                  onClick={() => useModalStore.getState().open("create-issue")}
-                >
-                  <SquarePen className="size-3.5" />
+              </DropdownMenu>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="text-muted-foreground"
+                onClick={() => useSearchStore.getState().setOpen(true)}
+              >
+                <Search />
+                <span>Search...</span>
+                <kbd className="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="text-muted-foreground"
+                onClick={() => useModalStore.getState().open("create-issue")}
+              >
+                <span className="relative">
+                  <SquarePen />
                   <DraftDot />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">New issue</TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
+                </span>
+                <span>New Issue</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarHeader>
 
         {/* Navigation */}
@@ -203,7 +212,7 @@ export function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {primaryNav.map((item) => {
+                {personalNav.map((item) => {
                   const isActive = pathname === item.href;
                   return (
                     <SidebarMenuItem key={item.href}>
@@ -228,9 +237,33 @@ export function AppSidebar() {
           </SidebarGroup>
 
           <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
                 {workspaceNav.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        render={<Link href={item.href} />}
+                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                      >
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarGroup>
+            <SidebarGroupLabel>Configure</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-0.5">
+                {configureNav.map((item) => {
                   const isActive = pathname === item.href;
                   return (
                     <SidebarMenuItem key={item.href}>
@@ -252,7 +285,38 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter />
+
+        <SidebarFooter className="p-2">
+          <div className="border-t pt-2">
+            <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+              <ActorAvatar
+                name={user?.name ?? ""}
+                initials={(user?.name ?? "U").charAt(0).toUpperCase()}
+                avatarUrl={user?.avatar_url}
+                size={28}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium leading-tight">
+                  {user?.name}
+                </p>
+                <p className="truncate text-xs text-muted-foreground leading-tight">
+                  {user?.email}
+                </p>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+                  <Ellipsis className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="top" sideOffset={4}>
+                  <DropdownMenuItem variant="destructive" onClick={logout}>
+                    <LogOut className="h-3.5 w-3.5" />
+                    Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
   );
