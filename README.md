@@ -117,12 +117,6 @@ The `multica` CLI connects your local machine to Multica — authenticate, manag
 | `multica issue create` | Create a new issue |
 | `multica update` | Update to the latest version |
 
-**Install via your AI agent** — paste this to Claude Code, Codex, OpenClaw, or OpenCode:
-
-```
-Fetch https://github.com/multica-ai/multica/blob/main/CLI_INSTALL.md and follow the instructions to install Multica CLI, log in, and start the daemon on this machine.
-```
-
 See the [CLI and Daemon Guide](CLI_AND_DAEMON.md) for the full command reference.
 
 ---
