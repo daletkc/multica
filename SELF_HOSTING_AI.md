@@ -8,23 +8,27 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 - Homebrew installed (for CLI)
 - At least one AI agent CLI on PATH: `claude` or `codex`
 
-## Server Setup
+## One-Command Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+```
+
+This installs everything: clones the repo, starts Docker services, and installs the CLI.
+
+Wait for the output `✓ Multica is installed and running!` before proceeding.
+
+**Expected result:**
+- Frontend at http://localhost:3000
+- Backend at http://localhost:8080
+- `multica` CLI installed and configured for localhost
+
+## Alternative: Manual Setup
 
 ```bash
 git clone https://github.com/multica-ai/multica.git
 cd multica
 make selfhost
-```
-
-Wait for the output `✓ Multica is running!` before proceeding.
-
-**Expected result:**
-- Frontend at http://localhost:3000
-- Backend at http://localhost:8080
-
-## CLI Setup
-
-```bash
 brew install multica-ai/tap/multica
 multica setup --local
 ```

@@ -19,7 +19,26 @@ Each user who wants to run AI agents locally also installs the **`multica` CLI**
 
 - Docker and Docker Compose
 
-## Step 1 — Start the Server
+## Quick Install
+
+One command to set up everything:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+```
+
+This clones the repo, starts all services, installs the CLI, and configures everything. Then:
+
+1. Open http://localhost:3000 — log in with any email + code **`888888`**
+2. Run `multica login` and `multica daemon start`
+
+<Callout>
+For a step-by-step setup, see below.
+</Callout>
+
+## Step-by-Step Setup
+
+### Step 1 — Start the Server
 
 ```bash
 git clone https://github.com/multica-ai/multica.git
@@ -38,7 +57,7 @@ Once ready:
 If you prefer running the Docker Compose steps manually: `cp .env.example .env`, edit `JWT_SECRET`, then `docker compose -f docker-compose.selfhost.yml up -d`.
 </Callout>
 
-## Step 2 — Log In
+### Step 2 — Log In
 
 Open http://localhost:3000. Enter any email address and use verification code **`888888`** to log in.
 
@@ -46,7 +65,7 @@ Open http://localhost:3000. Enter any email address and use verification code **
 This master code works in all non-production environments (when `APP_ENV` is not set to `production`). For production, configure an email provider — see [Configuration](#configuration) below.
 </Callout>
 
-## Step 3 — Install CLI & Start Daemon
+### Step 3 — Install CLI & Start Daemon
 
 The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks.
 
@@ -82,7 +101,7 @@ multica daemon status
 Alternatively, configure manually: `multica config local && multica login && multica daemon start`
 </Callout>
 
-## Step 4 — Verify & Start Using
+### Step 4 — Verify & Start Using
 
 1. Open your workspace at http://localhost:3000
 2. Navigate to **Settings → Runtimes** — you should see your machine listed

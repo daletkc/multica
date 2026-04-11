@@ -58,12 +58,10 @@ The fastest way to get started — no setup required: **[multica.ai](https://mul
 **Prerequisites:** Docker and Docker Compose.
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
-make selfhost
+curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
 ```
 
-This automatically creates `.env`, generates a random `JWT_SECRET`, and starts PostgreSQL, the backend, and the frontend via Docker Compose. Open http://localhost:3000 when ready — log in with any email and verification code `888888`.
+One command — clones the repo, starts all services, installs the CLI, and configures everything. Open http://localhost:3000 when ready — log in with any email and verification code `888888`.
 
 See the [Self-Hosting Guide](SELF_HOSTING.md) for full configuration, reverse proxy setup, and CLI/daemon instructions.
 
@@ -71,13 +69,19 @@ See the [Self-Hosting Guide](SELF_HOSTING.md) for full configuration, reverse pr
 
 The `multica` CLI connects your local machine to Multica — authenticate, manage workspaces, and run the agent daemon.
 
-**Option A — paste this to your coding agent (Claude Code, Codex, OpenClaw, OpenCode, etc.):**
+**Option A — one-line install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --cloud
+```
+
+**Option B — paste this to your coding agent (Claude Code, Codex, OpenClaw, OpenCode, etc.):**
 
 ```
 Fetch https://github.com/multica-ai/multica/blob/main/CLI_INSTALL.md and follow the instructions to install Multica CLI, log in, and start the daemon on this machine.
 ```
 
-**Option B — install manually:**
+**Option C — install manually:**
 
 ```bash
 # Install

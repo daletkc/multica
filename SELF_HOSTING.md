@@ -12,7 +12,32 @@ Deploy Multica on your own infrastructure in minutes.
 
 Each user who runs AI agents locally also installs the **`multica` CLI** and runs the **agent daemon** on their own machine.
 
-## Step 1 — Start the Server
+## Quick Install (Recommended)
+
+One command to set up everything — server, CLI, and configuration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+```
+
+This automatically clones the repository, starts all services via Docker Compose, and installs the `multica` CLI.
+
+Once complete, open http://localhost:3000, log in with any email + verification code **`888888`**, then:
+
+```bash
+multica login          # Authenticate (opens browser)
+multica daemon start   # Start the agent daemon
+```
+
+> **Prerequisites:** Docker and Docker Compose must be installed. The script checks for this and provides install links if missing.
+
+---
+
+## Step-by-Step Setup (Alternative)
+
+If you prefer to run each step manually:
+
+### Step 1 — Start the Server
 
 **Prerequisites:** Docker and Docker Compose.
 
@@ -29,15 +54,15 @@ Once ready:
 - **Frontend:** http://localhost:3000
 - **Backend API:** http://localhost:8080
 
-> **Note:** If you prefer to run the steps manually, see [Manual Docker Compose Setup](#manual-docker-compose-setup) below.
+> **Note:** If you prefer to run the Docker Compose steps manually, see [Manual Docker Compose Setup](#manual-docker-compose-setup) below.
 
-## Step 2 — Log In
+### Step 2 — Log In
 
 Open http://localhost:3000 in your browser. Enter any email address and use verification code **`888888`** to log in.
 
 > This master code works in all non-production environments (i.e. when `APP_ENV` is not set to `production`). For production, configure an email provider — see [Advanced Configuration](SELF_HOSTING_ADVANCED.md#email-required-for-authentication).
 
-## Step 3 — Install CLI & Start Daemon
+### Step 3 — Install CLI & Start Daemon
 
 The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks when agents are assigned work.
 
@@ -73,7 +98,7 @@ multica daemon status
 
 > **Alternative:** If you prefer manual steps, see [Manual CLI Configuration](#manual-cli-configuration) below.
 
-## Step 4 — Verify & Start Using
+### Step 4 — Verify & Start Using
 
 1. Open your workspace in the web app at http://localhost:3000
 2. Navigate to **Settings → Runtimes** — you should see your machine listed
