@@ -193,22 +193,29 @@ func (b *openclawBackend) processOutput(r io.Reader, ch chan<- Message) openclaw
 					Output: event.Text,
 				})
 			case "error":
-				errMsg := event.Text
-				if errMsg == "" {
-					errMsg = "unknown openclaw error"
-				}
+				errMsg := event.errorMessage()
 				b.cfg.Logger.Warn("openclaw error event", "error", errMsg)
 				trySend(ch, Message{Type: MessageError, Content: errMsg})
 				finalStatus = "failed"
 				finalError = errMsg
+			case "lifecycle":
+				phase := event.Phase
+				if phase == "error" || phase == "failed" || phase == "cancelled" {
+					errMsg := event.errorMessage()
+					b.cfg.Logger.Warn("openclaw lifecycle failure", "phase", phase, "error", errMsg)
+					trySend(ch, Message{Type: MessageError, Content: errMsg})
+					finalStatus = "failed"
+					finalError = errMsg
+				}
 			case "step_start":
 				trySend(ch, Message{Type: MessageStatus, Status: "running"})
 			case "step_finish":
 				if event.Usage != nil {
-					usage.InputTokens += openclawInt64(event.Usage, "input")
-					usage.OutputTokens += openclawInt64(event.Usage, "output")
-					usage.CacheReadTokens += openclawInt64(event.Usage, "cacheRead")
-					usage.CacheWriteTokens += openclawInt64(event.Usage, "cacheWrite")
+					u := parseOpenclawUsage(event.Usage)
+					usage.InputTokens += u.InputTokens
+					usage.OutputTokens += u.OutputTokens
+					usage.CacheReadTokens += u.CacheReadTokens
+					usage.CacheWriteTokens += u.CacheWriteTokens
 				}
 			}
 			continue
@@ -273,20 +280,21 @@ func tryParseOpenclawEvent(line string) (openclawEvent, bool) {
 }
 
 // tryParseOpenclawResult attempts to parse a line as a final result blob
-// (the legacy format with payloads + meta).
+// (the legacy format with payloads + meta). Lines must start with '{' to be
+// considered — we no longer scan for braces at arbitrary positions, which
+// avoids false matches on log lines containing JSON fragments.
 func tryParseOpenclawResult(raw string) (openclawResult, bool) {
-	// Try each '{' position until we find valid openclawResult JSON.
-	// Earlier '{' chars may appear in log/error lines (e.g. raw_params={...}).
-	var result openclawResult
-	for i := 0; i < len(raw); i++ {
-		if raw[i] != '{' {
-			continue
-		}
-		if err := json.Unmarshal([]byte(raw[i:]), &result); err == nil && (result.Payloads != nil || result.Meta.DurationMs > 0) {
-			return result, true
-		}
+	if len(raw) == 0 || raw[0] != '{' {
+		return openclawResult{}, false
 	}
-	return openclawResult{}, false
+	var result openclawResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return openclawResult{}, false
+	}
+	if result.Payloads == nil && result.Meta.DurationMs == 0 {
+		return openclawResult{}, false
+	}
+	return result, true
 }
 
 // buildOpenclawEventResult extracts text and metadata from a final result blob.
@@ -306,10 +314,7 @@ func (b *openclawBackend) buildOpenclawEventResult(result openclawResult, ch cha
 			sessionID = sid
 		}
 		if u, ok := result.Meta.AgentMeta["usage"].(map[string]any); ok {
-			usage.InputTokens = openclawInt64(u, "input")
-			usage.OutputTokens = openclawInt64(u, "output")
-			usage.CacheReadTokens = openclawInt64(u, "cacheRead")
-			usage.CacheWriteTokens = openclawInt64(u, "cacheWrite")
+			usage = parseOpenclawUsage(u)
 		}
 	}
 
@@ -319,6 +324,33 @@ func (b *openclawBackend) buildOpenclawEventResult(result openclawResult, ch cha
 		sessionID: sessionID,
 		usage:     usage,
 	}
+}
+
+// parseOpenclawUsage extracts token usage from a map, supporting multiple
+// field name conventions used by different OpenClaw versions and PaperClip:
+//
+//	input / inputTokens / input_tokens
+//	output / outputTokens / output_tokens
+//	cacheRead / cachedInputTokens / cached_input_tokens / cache_read
+//	cacheWrite / cacheCreationInputTokens / cache_creation_input_tokens / cache_write
+func parseOpenclawUsage(data map[string]any) TokenUsage {
+	return TokenUsage{
+		InputTokens:      openclawInt64FirstOf(data, "input", "inputTokens", "input_tokens"),
+		OutputTokens:     openclawInt64FirstOf(data, "output", "outputTokens", "output_tokens"),
+		CacheReadTokens:  openclawInt64FirstOf(data, "cacheRead", "cachedInputTokens", "cached_input_tokens", "cache_read", "cache_read_input_tokens"),
+		CacheWriteTokens: openclawInt64FirstOf(data, "cacheWrite", "cacheCreationInputTokens", "cache_creation_input_tokens", "cache_write"),
+	}
+}
+
+// openclawInt64FirstOf returns the first non-zero int64 value found under any
+// of the given keys. This supports field name variants across protocol versions.
+func openclawInt64FirstOf(data map[string]any, keys ...string) int64 {
+	for _, key := range keys {
+		if v := openclawInt64(data, key); v != 0 {
+			return v
+		}
+	}
+	return 0
 }
 
 // openclawInt64 safely extracts an int64 from a JSON-decoded map value (which
@@ -341,7 +373,15 @@ func openclawInt64(data map[string]any, key string) int64 {
 // ── JSON types for `openclaw agent --json` output ──
 
 // openclawEvent represents a single streaming NDJSON event from openclaw --json.
-// Event types: "text", "tool_use", "tool_result", "error", "step_start", "step_finish".
+//
+// Event types:
+//   - "text"        — text output (text field)
+//   - "tool_use"    — tool invocation (tool, callId, input)
+//   - "tool_result" — tool output (tool, callId, text)
+//   - "error"       — error (text, or structured error object)
+//   - "lifecycle"   — phase changes (phase: "error"/"failed"/"cancelled")
+//   - "step_start"  — agent step begins
+//   - "step_finish" — agent step ends (usage)
 type openclawEvent struct {
 	Type      string          `json:"type"`
 	SessionID string          `json:"sessionId,omitempty"`
@@ -350,6 +390,51 @@ type openclawEvent struct {
 	CallID    string          `json:"callId,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
 	Usage     map[string]any  `json:"usage,omitempty"`
+	Phase     string          `json:"phase,omitempty"`     // lifecycle event phase
+	Error     *openclawError  `json:"error,omitempty"`     // structured error object
+	Message   string          `json:"message,omitempty"`   // alternative error message field
+}
+
+// errorMessage extracts a human-readable error message from the event,
+// checking multiple fields: structured error object, text, message, or fallback.
+func (e openclawEvent) errorMessage() string {
+	if e.Error != nil {
+		if msg := e.Error.message(); msg != "" {
+			return msg
+		}
+	}
+	if e.Text != "" {
+		return e.Text
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "unknown openclaw error"
+}
+
+// openclawError represents a structured error in an openclaw event,
+// compatible with PaperClip's error format (name + data.message).
+type openclawError struct {
+	Name    string             `json:"name,omitempty"`
+	Data    *openclawErrorData `json:"data,omitempty"`
+	Message string             `json:"message,omitempty"`
+}
+
+func (e *openclawError) message() string {
+	if e.Data != nil && e.Data.Message != "" {
+		return e.Data.Message
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Name != "" {
+		return e.Name
+	}
+	return ""
+}
+
+type openclawErrorData struct {
+	Message string `json:"message,omitempty"`
 }
 
 // openclawResult represents the final JSON output from `openclaw agent --json`

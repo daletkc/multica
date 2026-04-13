@@ -251,7 +251,8 @@ func TestOpenclawProcessOutputWithBracesInLogLines(t *testing.T) {
 		Meta:     openclawMeta{DurationMs: 500},
 	}
 	data, _ := json.Marshal(result)
-	// Simulate error line containing braces before the real JSON (the exact bug scenario)
+	// Log line with braces should NOT be parsed as JSON — only lines starting
+	// with '{' are considered. The result blob on its own line is still parsed.
 	input := `[tools] exec failed: complex interpreter invocation detected. raw_params={"command":"echo hello"}` + "\n" + string(data)
 
 	res := b.processOutput(strings.NewReader(input), ch)
@@ -261,6 +262,34 @@ func TestOpenclawProcessOutputWithBracesInLogLines(t *testing.T) {
 	}
 	if res.output != "Final answer" {
 		t.Errorf("output: got %q, want %q", res.output, "Final answer")
+	}
+
+	close(ch)
+}
+
+func TestOpenclawResultBlobWithLeadingPrefixRejected(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	// A line with a prefix before the JSON should NOT be parsed as a result.
+	// This tests that the hardened parser rejects non-'{'-starting lines.
+	result := openclawResult{
+		Payloads: []openclawPayload{{Text: "Should not match"}},
+		Meta:     openclawMeta{DurationMs: 500},
+	}
+	data, _ := json.Marshal(result)
+	input := "some prefix " + string(data)
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	// Should fall back to raw output since the JSON has a prefix.
+	if res.status != "completed" {
+		t.Errorf("status: got %q, want %q", res.status, "completed")
+	}
+	if res.output != input {
+		t.Errorf("output: got %q, want raw input back", res.output)
 	}
 
 	close(ch)
@@ -480,6 +509,314 @@ func TestOpenclawStreamingMixedWithLogLines(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 text messages, got %d", len(msgs))
 	}
+}
+
+// ── Lifecycle event tests ──
+
+func TestOpenclawLifecycleErrorPhase(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"text","text":"Working..."}`,
+		`{"type":"lifecycle","phase":"error","text":"agent crashed unexpectedly"}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.status != "failed" {
+		t.Errorf("status: got %q, want %q", res.status, "failed")
+	}
+	if res.errMsg != "agent crashed unexpectedly" {
+		t.Errorf("errMsg: got %q", res.errMsg)
+	}
+
+	close(ch)
+	var msgs []Message
+	for m := range ch {
+		msgs = append(msgs, m)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[1].Type != MessageError {
+		t.Errorf("msg[1] type: got %s, want error", msgs[1].Type)
+	}
+}
+
+func TestOpenclawLifecycleFailedPhase(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"lifecycle","phase":"failed","message":"timeout exceeded"}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.status != "failed" {
+		t.Errorf("status: got %q, want %q", res.status, "failed")
+	}
+	if res.errMsg != "timeout exceeded" {
+		t.Errorf("errMsg: got %q, want %q", res.errMsg, "timeout exceeded")
+	}
+
+	close(ch)
+}
+
+func TestOpenclawLifecycleCancelledPhase(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"lifecycle","phase":"cancelled"}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.status != "failed" {
+		t.Errorf("status: got %q, want %q", res.status, "failed")
+	}
+	// With no text/message/error, should get the default.
+	if res.errMsg != "unknown openclaw error" {
+		t.Errorf("errMsg: got %q", res.errMsg)
+	}
+
+	close(ch)
+}
+
+func TestOpenclawLifecycleRunningPhaseIgnored(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"lifecycle","phase":"running"}`,
+		`{"type":"text","text":"Hello"}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.status != "completed" {
+		t.Errorf("status: got %q, want %q", res.status, "completed")
+	}
+
+	close(ch)
+}
+
+// ── Structured error tests ──
+
+func TestOpenclawStructuredErrorObject(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"error","error":{"name":"ModelNotFoundError","data":{"message":"model gpt-99 not available"}}}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.status != "failed" {
+		t.Errorf("status: got %q, want %q", res.status, "failed")
+	}
+	if res.errMsg != "model gpt-99 not available" {
+		t.Errorf("errMsg: got %q, want %q", res.errMsg, "model gpt-99 not available")
+	}
+
+	close(ch)
+}
+
+func TestOpenclawStructuredErrorNameOnly(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"error","error":{"name":"AuthenticationError"}}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.errMsg != "AuthenticationError" {
+		t.Errorf("errMsg: got %q, want %q", res.errMsg, "AuthenticationError")
+	}
+
+	close(ch)
+}
+
+func TestOpenclawStructuredErrorMessageField(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"error","error":{"message":"rate limit exceeded"}}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.errMsg != "rate limit exceeded" {
+		t.Errorf("errMsg: got %q, want %q", res.errMsg, "rate limit exceeded")
+	}
+
+	close(ch)
+}
+
+// ── Usage field name variant tests ──
+
+func TestOpenclawUsageAlternativeFieldNames(t *testing.T) {
+	t.Parallel()
+
+	// Test PaperClip-style field names (inputTokens, outputTokens, etc.)
+	data := map[string]any{
+		"inputTokens":      float64(500),
+		"outputTokens":     float64(200),
+		"cachedInputTokens": float64(100),
+	}
+	usage := parseOpenclawUsage(data)
+
+	if usage.InputTokens != 500 {
+		t.Errorf("InputTokens: got %d, want 500", usage.InputTokens)
+	}
+	if usage.OutputTokens != 200 {
+		t.Errorf("OutputTokens: got %d, want 200", usage.OutputTokens)
+	}
+	if usage.CacheReadTokens != 100 {
+		t.Errorf("CacheReadTokens: got %d, want 100", usage.CacheReadTokens)
+	}
+}
+
+func TestOpenclawUsageSnakeCaseFieldNames(t *testing.T) {
+	t.Parallel()
+
+	// Test snake_case field names (Anthropic API style)
+	data := map[string]any{
+		"input_tokens":                float64(300),
+		"output_tokens":              float64(150),
+		"cache_read_input_tokens":    float64(80),
+		"cache_creation_input_tokens": float64(40),
+	}
+	usage := parseOpenclawUsage(data)
+
+	if usage.InputTokens != 300 {
+		t.Errorf("InputTokens: got %d, want 300", usage.InputTokens)
+	}
+	if usage.OutputTokens != 150 {
+		t.Errorf("OutputTokens: got %d, want 150", usage.OutputTokens)
+	}
+	if usage.CacheReadTokens != 80 {
+		t.Errorf("CacheReadTokens: got %d, want 80", usage.CacheReadTokens)
+	}
+	if usage.CacheWriteTokens != 40 {
+		t.Errorf("CacheWriteTokens: got %d, want 40", usage.CacheWriteTokens)
+	}
+}
+
+func TestOpenclawUsageOriginalFieldNames(t *testing.T) {
+	t.Parallel()
+
+	// Test the original short field names (input, output, cacheRead, cacheWrite)
+	data := map[string]any{
+		"input":      float64(100),
+		"output":     float64(50),
+		"cacheRead":  float64(10),
+		"cacheWrite": float64(5),
+	}
+	usage := parseOpenclawUsage(data)
+
+	if usage.InputTokens != 100 {
+		t.Errorf("InputTokens: got %d, want 100", usage.InputTokens)
+	}
+	if usage.OutputTokens != 50 {
+		t.Errorf("OutputTokens: got %d, want 50", usage.OutputTokens)
+	}
+	if usage.CacheReadTokens != 10 {
+		t.Errorf("CacheReadTokens: got %d, want 10", usage.CacheReadTokens)
+	}
+	if usage.CacheWriteTokens != 5 {
+		t.Errorf("CacheWriteTokens: got %d, want 5", usage.CacheWriteTokens)
+	}
+}
+
+func TestOpenclawUsageAccumulationAcrossSteps(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	lines := []string{
+		`{"type":"step_finish","usage":{"inputTokens":100,"outputTokens":50}}`,
+		`{"type":"step_finish","usage":{"inputTokens":200,"outputTokens":80,"cachedInputTokens":60}}`,
+	}
+	input := strings.Join(lines, "\n")
+
+	res := b.processOutput(strings.NewReader(input), ch)
+
+	if res.usage.InputTokens != 300 {
+		t.Errorf("InputTokens: got %d, want 300", res.usage.InputTokens)
+	}
+	if res.usage.OutputTokens != 130 {
+		t.Errorf("OutputTokens: got %d, want 130", res.usage.OutputTokens)
+	}
+	if res.usage.CacheReadTokens != 60 {
+		t.Errorf("CacheReadTokens: got %d, want 60", res.usage.CacheReadTokens)
+	}
+
+	close(ch)
+}
+
+func TestOpenclawUsageFinalResultAlternativeFields(t *testing.T) {
+	t.Parallel()
+
+	b := &openclawBackend{cfg: Config{Logger: slog.Default()}}
+	ch := make(chan Message, 256)
+
+	result := openclawResult{
+		Payloads: []openclawPayload{{Text: "Done"}},
+		Meta: openclawMeta{
+			DurationMs: 1000,
+			AgentMeta: map[string]any{
+				"usage": map[string]any{
+					"inputTokens":      float64(400),
+					"outputTokens":     float64(180),
+					"cachedInputTokens": float64(90),
+				},
+			},
+		},
+	}
+	data, _ := json.Marshal(result)
+
+	res := b.processOutput(strings.NewReader(string(data)), ch)
+
+	if res.usage.InputTokens != 400 {
+		t.Errorf("InputTokens: got %d, want 400", res.usage.InputTokens)
+	}
+	if res.usage.OutputTokens != 180 {
+		t.Errorf("OutputTokens: got %d, want 180", res.usage.OutputTokens)
+	}
+	if res.usage.CacheReadTokens != 90 {
+		t.Errorf("CacheReadTokens: got %d, want 90", res.usage.CacheReadTokens)
+	}
+
+	close(ch)
 }
 
 // ── openclawInt64 tests ──
