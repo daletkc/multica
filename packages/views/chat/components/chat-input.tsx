@@ -25,7 +25,7 @@ export function ChatInput({ onSend, onStop, isRunning, disabled }: ChatInputProp
 
   return (
     <div className="p-2 pt-0">
-      <div className="relative flex min-h-16 max-h-40 flex-col rounded-lg bg-card pb-8 ring-1 ring-border">
+      <div className="relative flex min-h-16 max-h-40 flex-col rounded-lg bg-card pb-8 border-1 border-border transition-colors focus-within:border-brand">
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
           <ContentEditor
             ref={editorRef}

@@ -45,20 +45,12 @@ export function ChatMessageList({
       ))}
       {/* Live streaming timeline */}
       {hasTimeline && (
-        <div className="flex items-start gap-3">
-          <AgentAvatar agent={agent} />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <TimelineView items={timelineItems} />
-          </div>
+        <div className="w-full space-y-1.5">
+          <TimelineView items={timelineItems} />
         </div>
       )}
       {isWaiting && !hasTimeline && (
-        <div className="flex items-start gap-3">
-          <AgentAvatar agent={agent} />
-          <div className="flex items-center pt-1">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          </div>
-        </div>
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
       )}
       <div ref={bottomRef} />
     </div>
@@ -77,7 +69,7 @@ function MessageBubble({
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="rounded-2xl bg-primary px-3.5 py-2 text-sm text-primary-foreground max-w-[85%] whitespace-pre-wrap break-words">
+        <div className="rounded-2xl bg-muted px-3.5 py-2 text-sm max-w-[80%] whitespace-pre-wrap break-words">
           {message.content}
         </div>
       </div>
@@ -116,17 +108,14 @@ function AssistantMessage({
   );
 
   return (
-    <div className="flex items-start gap-3">
-      <AgentAvatar agent={agent} />
-      <div className="min-w-0 flex-1 space-y-1.5">
-        {timeline.length > 0 ? (
-          <TimelineView items={timeline} />
-        ) : (
-          <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-            <Markdown>{message.content}</Markdown>
-          </div>
-        )}
-      </div>
+    <div className="w-full space-y-1.5">
+      {timeline.length > 0 ? (
+        <TimelineView items={timeline} />
+      ) : (
+        <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+          <Markdown>{message.content}</Markdown>
+        </div>
+      )}
     </div>
   );
 }

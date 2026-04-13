@@ -18,7 +18,7 @@ export function ChatFab() {
     <Tooltip>
       <TooltipTrigger
         onClick={toggle}
-        className="fixed bottom-4 right-4 z-50 flex size-10 cursor-pointer items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm transition-transform hover:scale-110 hover:text-accent-foreground active:scale-95"
+        className="fixed bottom-4 right-4 z-50 flex size-10 cursor-pointer items-center justify-center rounded-full ring-1 ring-foreground/10 bg-card text-muted-foreground shadow-sm transition-transform hover:scale-110 hover:text-accent-foreground active:scale-95"
       >
         <MessageCircle className="size-5" />
       </TooltipTrigger>

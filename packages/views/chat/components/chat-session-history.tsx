@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, MessageSquare, Archive, Trash2 } from "lucide-react";
+import { Button } from "@multica/ui/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
 import { Bot } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -47,12 +48,14 @@ export function ChatSessionHistory() {
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-4 py-2.5">
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground"
           onClick={() => setShowHistory(false)}
-          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
-          <ArrowLeft className="size-3.5" />
-        </button>
+          <ArrowLeft />
+        </Button>
         <span className="text-sm font-medium">Chat History</span>
       </div>
 
@@ -151,7 +154,7 @@ function SessionItem({
     >
       <Avatar className="size-6 shrink-0 mt-0.5">
         {agent?.avatar_url && <AvatarImage src={agent.avatar_url} />}
-        <AvatarFallback className="bg-purple-100 text-purple-700 text-[10px]">
+        <AvatarFallback className="bg-purple-100 text-purple-700">
           <Bot className="size-3" />
         </AvatarFallback>
       </Avatar>
@@ -174,13 +177,15 @@ function SessionItem({
         </div>
       </div>
       {onArchive && (
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="invisible group-hover:visible text-muted-foreground hover:text-destructive shrink-0 mt-0.5"
           onClick={onArchive}
           title="Archive"
-          className="invisible group-hover:visible flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive shrink-0 mt-0.5"
         >
-          <Trash2 className="size-3" />
-        </button>
+          <Trash2 />
+        </Button>
       )}
     </button>
   );

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Minus, Maximize2, Minimize2, Send, ChevronDown, Bot, Plus, History } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@multica/ui/components/ui/avatar";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -226,8 +227,8 @@ export function ChatWindow() {
   const hasMessages = messages.length > 0 || timelineItems.length > 0;
 
   const containerClass = isFullscreen
-    ? "fixed inset-y-0 right-0 z-50 flex flex-col w-[50%] border-l bg-background shadow-2xl"
-    : "fixed bottom-4 right-4 z-50 flex flex-col w-[420px] h-[600px] rounded-xl border bg-background shadow-2xl overflow-hidden";
+    ? "fixed top-4 right-4 bottom-4 z-50 flex flex-col w-[50%] rounded-xl ring-1 ring-foreground/10 bg-sidebar shadow-2xl overflow-hidden"
+    : "fixed bottom-4 right-4 z-50 flex flex-col w-[420px] h-[600px] rounded-xl ring-1 ring-foreground/10 bg-sidebar shadow-2xl overflow-hidden";
 
   return (
     <div className={containerClass}>
@@ -240,38 +241,46 @@ export function ChatWindow() {
             onSelect={handleSelectAgent}
           />
           <div className="flex items-center gap-0.5">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
               onClick={() => setShowHistory(true)}
               title="Chat history"
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              <History className="size-3.5" />
-            </button>
-            <button
+              <History />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
               onClick={() => {
                 setActiveSession(null);
                 clearTimeline();
                 setPendingTask(null);
               }}
               title="New chat"
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              <Plus className="size-3.5" />
-            </button>
-            <button
+              <Plus />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
               onClick={toggleFullscreen}
               title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-            </button>
-            <button
+              {isFullscreen ? <Minimize2 /> : <Maximize2 />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
               onClick={() => setOpen(false)}
               title="Minimize"
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              <Minus className="size-3.5" />
-            </button>
+              <Minus />
+            </Button>
           </div>
         </div>
       )}
@@ -329,20 +338,20 @@ function AgentSelector({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-1.5 py-1 -ml-1.5 transition-colors hover:bg-accent">
+      <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-1.5 py-1 -ml-1.5 transition-colors hover:bg-accent aria-expanded:bg-accent">
         <AgentAvatarSmall agent={activeAgent} />
         <span className="text-sm font-medium">{activeAgent.name}</span>
         <ChevronDown className="size-3 text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="max-h-60 w-auto max-w-56">
         {agents.map((agent) => (
           <DropdownMenuItem
             key={agent.id}
             onClick={() => onSelect(agent)}
-            className="flex items-center gap-2"
+            className="flex min-w-0 items-center gap-2"
           >
             <AgentAvatarSmall agent={agent} />
-            <span>{agent.name}</span>
+            <span className="truncate">{agent.name}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -354,7 +363,7 @@ function AgentAvatarSmall({ agent }: { agent: Agent }) {
   return (
     <Avatar className="size-5">
       {agent.avatar_url && <AvatarImage src={agent.avatar_url} />}
-      <AvatarFallback className="bg-purple-100 text-purple-700 text-[10px]">
+      <AvatarFallback className="bg-purple-100 text-purple-700">
         <Bot className="size-3" />
       </AvatarFallback>
     </Avatar>
