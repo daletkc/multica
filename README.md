@@ -50,8 +50,6 @@ Multica manages the full agent lifecycle: from task assignment to execution moni
 
 ## Multica vs Paperclip
 
-If you're familiar with [Paperclip](https://github.com/nichochar/paperclip), here's how Multica differs:
-
 | | Multica | Paperclip |
 |---|---------|-----------|
 | **Focus** | Team AI agent collaboration platform | Solo AI agent company simulator |
@@ -61,7 +59,7 @@ If you're familiar with [Paperclip](https://github.com/nichochar/paperclip), her
 | **Management depth** | Lightweight (Issues / Projects / Labels) | Heavy governance (Org chart / Approvals / Budgets) |
 | **Extensibility** | Skills system | Skills + Plugin system |
 
-**TL;DR — Want your team to collaborate with AI agents on projects? Choose Multica. Want to manage a full AI agent workforce solo? Choose Paperclip.**
+**TL;DR — Multica is built for teams that want to collaborate with AI agents on real projects together.**
 
 ---
 
