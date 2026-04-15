@@ -43,7 +43,7 @@ function getRuntimeDevice(agent: Agent, runtimes: RuntimeDevice[]): RuntimeDevic
 
 type DetailTab = "instructions" | "skills" | "tasks" | "env" | "settings";
 
-const allDetailTabs: { id: DetailTab; label: string; icon: typeof FileText }[] = [
+const detailTabs: { id: DetailTab; label: string; icon: typeof FileText }[] = [
   { id: "instructions", label: "Instructions", icon: FileText },
   { id: "skills", label: "Skills", icon: BookOpenText },
   { id: "tasks", label: "Tasks", icon: ListTodo },
@@ -73,12 +73,6 @@ export function AgentDetail({
   const [activeTab, setActiveTab] = useState<DetailTab>("instructions");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const isArchived = !!agent.archived_at;
-
-  // Hide the Environment tab when custom_env is null (redacted by backend for non-owner/non-admin).
-  const canViewEnv = agent.custom_env !== null;
-  const detailTabs = canViewEnv
-    ? allDetailTabs
-    : allDetailTabs.filter((t) => t.id !== "env");
 
   return (
     <div className="flex h-full flex-col">
@@ -171,9 +165,10 @@ export function AgentDetail({
           <SkillsTab agent={agent} />
         )}
         {activeTab === "tasks" && <TasksTab agent={agent} />}
-        {activeTab === "env" && canViewEnv && (
+        {activeTab === "env" && (
           <EnvTab
             agent={agent}
+            readOnly={agent.custom_env_redacted}
             onSave={(updates) => onUpdate(agent.id, updates)}
           />
         )}

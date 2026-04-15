@@ -23,7 +23,8 @@ type AgentResponse struct {
 	AvatarURL          *string           `json:"avatar_url"`
 	RuntimeMode        string            `json:"runtime_mode"`
 	RuntimeConfig      any               `json:"runtime_config"`
-	CustomEnv          map[string]string `json:"custom_env,omitempty"`
+	CustomEnv          map[string]string `json:"custom_env"`
+	CustomEnvRedacted  bool              `json:"custom_env_redacted"`
 	Visibility         string            `json:"visibility"`
 	Status             string            `json:"status"`
 	MaxConcurrentTasks int32             `json:"max_concurrent_tasks"`
@@ -340,10 +341,16 @@ func canViewAgentEnv(agent db.Agent, userID string, memberRole string) bool {
 	return uuidToString(agent.OwnerID) == userID
 }
 
-// redactEnv clears custom_env from the response when the caller is not
-// authorised to view it.
+// redactEnv masks custom_env values in the response when the caller is not
+// authorised to view them. Keys are preserved so members can see which
+// variables are configured; values are replaced with "****".
 func redactEnv(resp *AgentResponse) {
-	resp.CustomEnv = nil
+	masked := make(map[string]string, len(resp.CustomEnv))
+	for k := range resp.CustomEnv {
+		masked[k] = "****"
+	}
+	resp.CustomEnv = masked
+	resp.CustomEnvRedacted = true
 }
 
 // canManageAgent checks whether the current user can update or archive an agent.

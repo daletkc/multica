@@ -47,7 +47,8 @@ export interface Agent {
   avatar_url: string | null;
   runtime_mode: AgentRuntimeMode;
   runtime_config: Record<string, unknown>;
-  custom_env: Record<string, string> | null;
+  custom_env: Record<string, string>;
+  custom_env_redacted: boolean;
   visibility: AgentVisibility;
   status: AgentStatus;
   max_concurrent_tasks: number;
