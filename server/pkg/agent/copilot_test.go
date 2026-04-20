@@ -155,6 +155,24 @@ func TestCopilotParseToolExecCompleteError(t *testing.T) {
 	}
 }
 
+func TestCopilotParseResultFractionalPremiumRequests(t *testing.T) {
+	t.Parallel()
+	// Regression: real Copilot CLI v1.0.32 emits premiumRequests as a float
+	// (e.g. 7.5). Decoding into an int field used to fail the entire result
+	// line, dropping sessionId and breaking chat-session resume.
+	const line = `{"type":"result","timestamp":"2026-04-20T05:34:30.469Z","sessionId":"349793b7-7067-49d4-a807-8788561643bd","exitCode":0,"usage":{"premiumRequests":7.5,"totalApiDurationMs":1500,"sessionDurationMs":5842,"codeChanges":{"linesAdded":0,"linesRemoved":0,"filesModified":[]}}}`
+	var evt copilotEvent
+	if err := json.Unmarshal([]byte(line), &evt); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if evt.SessionID != "349793b7-7067-49d4-a807-8788561643bd" {
+		t.Fatalf("unexpected sessionId: %q", evt.SessionID)
+	}
+	if evt.Usage == nil || evt.Usage.PremiumRequests != 7.5 {
+		t.Fatalf("expected premiumRequests=7.5, got %#v", evt.Usage)
+	}
+}
+
 func TestCopilotParseResult(t *testing.T) {
 	t.Parallel()
 	evt := parseCopilotEvent(t, fixtureResult)
@@ -172,7 +190,7 @@ func TestCopilotParseResult(t *testing.T) {
 		t.Fatal("expected usage to be present")
 	}
 	if evt.Usage.PremiumRequests != 3 {
-		t.Fatalf("expected 3 premiumRequests, got %d", evt.Usage.PremiumRequests)
+		t.Fatalf("expected 3 premiumRequests, got %v", evt.Usage.PremiumRequests)
 	}
 	if evt.Usage.TotalAPIDurationMs != 1763 {
 		t.Fatalf("expected totalApiDurationMs 1763, got %d", evt.Usage.TotalAPIDurationMs)

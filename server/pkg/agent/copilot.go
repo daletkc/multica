@@ -250,12 +250,16 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 
 			var evt copilotEvent
 			if err := json.Unmarshal([]byte(line), &evt); err != nil {
+				slog.Warn("copilot event parse failed", "err", err, "line", line)
 				continue
 			}
 
 			for _, m := range handleCopilotEvent(evt, st) {
 				trySend(msgCh, m)
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			slog.Warn("copilot stdout scanner error", "err", err)
 		}
 
 		exitErr := cmd.Wait()
@@ -384,7 +388,7 @@ type copilotSessionWarning struct {
 
 // copilotResultUsage is the usage on the final "result" line.
 type copilotResultUsage struct {
-	PremiumRequests    int                 `json:"premiumRequests"`
+	PremiumRequests    float64             `json:"premiumRequests"`
 	TotalAPIDurationMs int64               `json:"totalApiDurationMs"`
 	SessionDurationMs  int64               `json:"sessionDurationMs"`
 	CodeChanges        *copilotCodeChanges `json:"codeChanges,omitempty"`
