@@ -13,14 +13,22 @@ import (
 
 const (
 	createNewProcessGroup = 0x00000200
+	detachedProcess       = 0x00000008
 	ctrlBreakEvent        = 1
 	sigBreak              = syscall.Signal(0x15)
 )
 
+// daemonSysProcAttr returns the attributes used when spawning the background
+// daemon. DETACHED_PROCESS severs the inherited console so closing the parent
+// cmd/PowerShell window no longer propagates CTRL_CLOSE_EVENT to the daemon;
+// CREATE_NEW_PROCESS_GROUP puts the daemon into its own Ctrl+C group so
+// `daemon stop` can still deliver CTRL_BREAK_EVENT via GenerateConsoleCtrlEvent.
+// The daemon's stdout/stderr are already redirected to the log file before
+// Start() is called, so losing the console is safe.
 func daemonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		HideWindow:    true,
-		CreationFlags: createNewProcessGroup,
+		CreationFlags: createNewProcessGroup | detachedProcess,
 	}
 }
 
