@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/logger"
 	"github.com/multica-ai/multica/server/internal/realtime"
@@ -80,6 +81,9 @@ func main() {
 	}
 	registerListeners(bus, broadcaster)
 
+	analyticsClient := analytics.NewFromEnv()
+	defer analyticsClient.Close()
+
 	queries := db.New(pool)
 	hub.SetAuthorizer(newScopeAuthorizer(queries))
 	// Order matters: subscriber listeners must register BEFORE notification listeners.
@@ -89,7 +93,7 @@ func main() {
 	registerActivityListeners(bus, queries)
 	registerNotificationListeners(bus, queries)
 
-	r := NewRouter(pool, hub, bus)
+	r := NewRouter(pool, hub, bus, analyticsClient)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -104,7 +108,7 @@ func main() {
 	registerAutopilotListeners(bus, autopilotSvc)
 
 	// Start background sweeper to mark stale runtimes as offline.
-	go runRuntimeSweeper(sweepCtx, queries, bus)
+	go runRuntimeSweeper(sweepCtx, queries, taskSvc, bus)
 	go runAutopilotScheduler(autopilotCtx, queries, autopilotSvc)
 	go runDBStatsLogger(sweepCtx, pool)
 
