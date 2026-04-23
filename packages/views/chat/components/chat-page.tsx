@@ -252,7 +252,7 @@ export function ChatPage() {
 
         <div
           className={cn(
-            "mx-auto w-full max-w-3xl px-4 pb-4",
+            "mx-auto w-full max-w-3xl pb-4",
             hasMessages ? "" : "pb-8",
           )}
         >
