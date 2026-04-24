@@ -222,6 +222,39 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestReadinessEndpoints(t *testing.T) {
+	for _, path := range []string{"/readyz", "/healthz"} {
+		t.Run(path, func(t *testing.T) {
+			resp, err := http.Get(testServer.URL + path)
+			if err != nil {
+				t.Fatalf("readiness check failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d", resp.StatusCode)
+			}
+
+			var result struct {
+				Status string            `json:"status"`
+				Checks map[string]string `json:"checks"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if result.Status != "ok" {
+				t.Fatalf("expected status ok, got %s", result.Status)
+			}
+			if result.Checks["db"] != "ok" {
+				t.Fatalf("expected db check ok, got %s", result.Checks["db"])
+			}
+			if result.Checks["migrations"] != "ok" {
+				t.Fatalf("expected migrations check ok, got %s", result.Checks["migrations"])
+			}
+		})
+	}
+}
+
 func TestConfigRouteIsPublic(t *testing.T) {
 	resp, err := http.Get(testServer.URL + "/api/config")
 	if err != nil {

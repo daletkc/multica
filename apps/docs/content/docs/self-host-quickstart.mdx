@@ -31,6 +31,9 @@ make selfhost
 3. Bring up every service using `docker-compose.selfhost.yml`
 4. Wait until the backend's `/health` endpoint is ready
 
+For ongoing production probes after startup, use `/readyz` when you want the
+check to fail on database or migration problems.
+
 The backend container **runs database migrations automatically** on startup (`docker/entrypoint.sh` runs `./migrate up` before the server starts) — you'll see the migration output in the backend logs. Version upgrades are handled the same way.
 
 <Callout type="info">

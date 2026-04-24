@@ -25,6 +25,7 @@ Look up issues by symptom. Each entry gives you **symptom / likely causes / how 
 multica daemon logs --lines 100    # look for daemon-side errors
 echo $MULTICA_SERVER_URL          # confirm the address is set
 curl -i http://<server-host>:8080/health   # hit the server directly
+curl -i http://<server-host>:8080/readyz  # include DB + migration readiness
 cat ~/.multica/config.json        # verify api_token exists
 multica workspace list            # confirm you're a member of the target workspace
 ```
