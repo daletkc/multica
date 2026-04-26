@@ -626,6 +626,52 @@ func TestCreateIssueAcceptsValidMemberAssignee(t *testing.T) {
 	testHandler.DeleteIssue(httptest.NewRecorder(), cleanupReq)
 }
 
+// TestCreateIssueRejectsMalformedAssigneeID covers the case where parseUUID
+// silently produces an invalid pgtype.UUID and the validator would otherwise
+// treat (no type + unparseable id) as "no assignee" and accept the request.
+func TestCreateIssueRejectsMalformedAssigneeID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":       "Malformed assignee_id only",
+		"assignee_id": "not-a-uuid",
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateIssue: expected 400 for malformed assignee_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestUpdateIssueRejectsMalformedAssigneeID is the equivalent for the update
+// path, where the same parseUUID-shaped gap existed on a previously-unassigned
+// issue.
+func TestUpdateIssueRejectsMalformedAssigneeID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "Update malformed assignee target",
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIssue: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created IssueResponse
+	json.NewDecoder(w.Body).Decode(&created)
+	defer func() {
+		cleanupReq := newRequest("DELETE", "/api/issues/"+created.ID, nil)
+		cleanupReq = withURLParam(cleanupReq, "id", created.ID)
+		testHandler.DeleteIssue(httptest.NewRecorder(), cleanupReq)
+	}()
+
+	w = httptest.NewRecorder()
+	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{
+		"assignee_id": "not-a-uuid",
+	})
+	req = withURLParam(req, "id", created.ID)
+	testHandler.UpdateIssue(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateIssue: expected 400 for malformed assignee_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestUpdateIssueRejectsNonexistentMemberAssignee verifies the same gap is
 // closed on the update path — UpdateIssue previously only validated agents.
 func TestUpdateIssueRejectsNonexistentMemberAssignee(t *testing.T) {

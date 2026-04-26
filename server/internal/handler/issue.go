@@ -806,6 +806,13 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AssigneeID != nil {
 		assigneeID = parseUUID(*req.AssigneeID)
+		// parseUUID silently returns an invalid pgtype.UUID for malformed input.
+		// Reject explicitly so the validator below cannot mistake "type unset
+		// + id unparseable" for "no assignee" and accept the request.
+		if !assigneeID.Valid {
+			writeError(w, http.StatusBadRequest, "assignee_id is not a valid UUID")
+			return
+		}
 	}
 
 	if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID); status != 0 {
@@ -1002,6 +1009,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	if _, ok := rawFields["assignee_id"]; ok {
 		if req.AssigneeID != nil {
 			params.AssigneeID = parseUUID(*req.AssigneeID)
+			if !params.AssigneeID.Valid {
+				writeError(w, http.StatusBadRequest, "assignee_id is not a valid UUID")
+				return
+			}
 		} else {
 			params.AssigneeID = pgtype.UUID{Valid: false} // explicit null = unassign
 		}
@@ -1357,6 +1368,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		if _, ok := rawUpdates["assignee_id"]; ok {
 			if req.Updates.AssigneeID != nil {
 				params.AssigneeID = parseUUID(*req.Updates.AssigneeID)
+				if !params.AssigneeID.Valid {
+					continue
+				}
 			} else {
 				params.AssigneeID = pgtype.UUID{Valid: false}
 			}
