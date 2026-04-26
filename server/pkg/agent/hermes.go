@@ -56,6 +56,17 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	env := buildEnv(b.cfg.Env)
 	// Enable yolo mode so Hermes auto-approves all tool executions.
 	env = append(env, "HERMES_YOLO_MODE=1")
+	// NEW: Propagate Multica agent identity so Hermes subprocesses
+	// (e.g. multica CLI calls) inherit X-Agent-ID / X-Task-ID authorship.
+	if b.cfg.AgentID != "" {
+		env = append(env, "MULTICA_AGENT_ID="+b.cfg.AgentID)
+	}
+	if b.cfg.TaskID != "" {
+		env = append(env, "MULTICA_TASK_ID="+b.cfg.TaskID)
+	}
+	if b.cfg.WorkspaceID != "" {
+		env = append(env, "MULTICA_WORKSPACE_ID="+b.cfg.WorkspaceID)
+	}
 	cmd.Env = env
 
 	stdout, err := cmd.StdoutPipe()

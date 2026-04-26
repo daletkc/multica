@@ -90,6 +90,11 @@ type Config struct {
 	ExecutablePath string            // path to CLI binary (claude, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi)
 	Env            map[string]string // extra environment variables
 	Logger         *slog.Logger
+	// Identity fields used by ACP-speaking backends (hermes, kimi)
+	// to propagate agent authorship through the ACP protocol layer.
+	AgentID     string
+	TaskID      string
+	WorkspaceID string
 }
 
 // New creates a Backend for the given agent type.
